@@ -1,13 +1,7 @@
 {
-  "itemGroup.smartbundle": "Example Mod Tab",
+  "itemGroup.smartbundle": "Smart Bundle",
   "block.smartbundle.example_block": "Example Block",
   "item.smartbundle.example_item": "Example Item",
 
-  "smartbundle.configuration.title": "Smart Bundle Configs",
-  "smartbundle.configuration.section.smartbundle.common.toml": "Smart Bundle Configs",
-  "smartbundle.configuration.section.smartbundle.common.toml.title": "Smart Bundle Configs",
-  "smartbundle.configuration.items": "Item List",
-  "smartbundle.configuration.logDirtBlock": "Log Dirt Block",
-  "smartbundle.configuration.magicNumberIntroduction": "Magic Number Text",
-  "smartbundle.configuration.magicNumber": "Magic Number"
+  "button.smartbundle.sort": "Sort Inventory"
 }
