@@ -1,7 +1,11 @@
-{
+﻿{
   "itemGroup.smartbundle": "Smart Bundle",
   "block.smartbundle.example_block": "Example Block",
   "item.smartbundle.example_item": "Example Item",
 
-  "button.smartbundle.sort": "Sort Inventory"
+  "button.smartbundle.sort": "Sort Inventory",
+
+  "key.smartbundle.open_craft_helper": "Open Craft Helper",
+  "key.categories.smartbundle": "Smart Bundle",
+  "gui.smartbundle.craft_helper": "Craft Helper"
 }

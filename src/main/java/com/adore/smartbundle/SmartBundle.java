@@ -1,4 +1,4 @@
-package com.adore.smartbundle;
+﻿package com.adore.smartbundle;
 
 import org.slf4j.Logger;
 
@@ -76,6 +76,11 @@ public class SmartBundle {
             SortInventoryPacket.TYPE,
             SortInventoryPacket.STREAM_CODEC,
             SortInventoryPacket::handleServer
+        );
+        registrar.playToServer(
+            CraftRecipePacket.TYPE,
+            CraftRecipePacket.STREAM_CODEC,
+            CraftRecipePacket::handleServer
         );
     }
 
