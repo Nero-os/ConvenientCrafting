@@ -1,0 +1,11 @@
+{
+  "itemGroup.convenientcrafting": "便捷合成",
+  "block.convenientcrafting.example_block": "便捷合成方块",
+  "item.convenientcrafting.example_item": "便捷合成物品",
+
+  "button.convenientcrafting.sort": "整理背包",
+
+  "key.convenientcrafting.open_craft_helper": "打开便捷合成",
+  "key.categories.convenientcrafting": "便捷合成",
+  "gui.convenientcrafting.craft_helper": "便捷合成"
+}

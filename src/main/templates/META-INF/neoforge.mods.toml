@@ -46,7 +46,8 @@ displayName="${mod_name}" #mandatory
 
 # The description text for the mod (multi line!) (#mandatory)
 description='''
-Example mod description.
+便捷合成 (Convenient Crafting) 是一款面向 Minecraft 1.21.1 与 NeoForge 的背包整理和便携合成辅助模组。
+它提供背包物品智能整理、合成配方检索、可合成状态筛选与背包材料直接合成等功能，用于提升玩家在生存、建造和探索过程中的物品管理效率。
 '''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.

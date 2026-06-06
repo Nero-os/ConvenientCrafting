@@ -1,4 +1,4 @@
-package com.adore.smartbundle;
+package com.adore.convenientcrafting;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -46,7 +46,7 @@ public class CraftHelperScreen extends Screen {
     private Map<String, Integer> cachedInventoryCounts = new HashMap<>();
 
     protected CraftHelperScreen() {
-        super(Component.translatable("gui.smartbundle.craft_helper"));
+        super(Component.translatable("gui.convenientcrafting.craft_helper"));
     }
 
     @Override

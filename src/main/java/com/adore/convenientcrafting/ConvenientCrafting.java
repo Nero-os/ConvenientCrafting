@@ -1,4 +1,4 @@
-package com.adore.smartbundle;
+package com.adore.convenientcrafting;
 
 import org.slf4j.Logger;
 
@@ -32,9 +32,9 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
-@Mod(SmartBundle.MODID)
-public class SmartBundle {
-    public static final String MODID = "smartbundle";
+@Mod(ConvenientCrafting.MODID)
+public class ConvenientCrafting {
+    public static final String MODID = "convenientcrafting";
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(MODID);
@@ -48,14 +48,14 @@ public class SmartBundle {
             .alwaysEdible().nutrition(1).saturationModifier(2f).build()));
 
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> EXAMPLE_TAB = CREATIVE_MODE_TABS.register("example_tab", () -> CreativeModeTab.builder()
-            .title(Component.translatable("itemGroup.smartbundle"))
+            .title(Component.translatable("itemGroup.convenientcrafting"))
             .withTabsBefore(CreativeModeTabs.COMBAT)
             .icon(() -> EXAMPLE_ITEM.get().getDefaultInstance())
             .displayItems((parameters, output) -> {
                 output.accept(EXAMPLE_ITEM.get());
             }).build());
 
-    public SmartBundle(IEventBus modEventBus, ModContainer modContainer) {
+    public ConvenientCrafting(IEventBus modEventBus, ModContainer modContainer) {
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::registerPackets);
 

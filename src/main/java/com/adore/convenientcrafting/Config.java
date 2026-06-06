@@ -1,4 +1,4 @@
-package com.adore.smartbundle;
+package com.adore.convenientcrafting;
 
 import java.util.List;
 import java.util.Set;

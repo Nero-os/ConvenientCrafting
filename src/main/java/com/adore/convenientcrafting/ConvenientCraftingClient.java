@@ -1,4 +1,4 @@
-package com.adore.smartbundle;
+package com.adore.convenientcrafting;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
@@ -23,29 +23,29 @@ import net.neoforged.neoforge.common.util.Lazy;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
-@Mod(value = SmartBundle.MODID, dist = Dist.CLIENT)
-@EventBusSubscriber(modid = SmartBundle.MODID, value = Dist.CLIENT)
-public class SmartBundleClient {
+@Mod(value = ConvenientCrafting.MODID, dist = Dist.CLIENT)
+@EventBusSubscriber(modid = ConvenientCrafting.MODID, value = Dist.CLIENT)
+public class ConvenientCraftingClient {
 
     private static final Lazy<net.minecraft.client.KeyMapping> OPEN_CRAFT_HELPER_KEY = Lazy.of(() ->
         new net.minecraft.client.KeyMapping(
-            "key.smartbundle.open_craft_helper",
+            "key.convenientcrafting.open_craft_helper",
             KeyConflictContext.IN_GAME,
             KeyModifier.NONE,
             InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_G,
-            "key.categories.smartbundle"
+            "key.categories.convenientcrafting"
         )
     );
 
-    public SmartBundleClient(ModContainer container) {
+    public ConvenientCraftingClient(ModContainer container) {
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
     }
 
     @SubscribeEvent
     static void onClientSetup(FMLClientSetupEvent event) {
-        SmartBundle.LOGGER.info("HELLO FROM CLIENT SETUP");
-        SmartBundle.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
+        ConvenientCrafting.LOGGER.info("HELLO FROM CLIENT SETUP");
+        ConvenientCrafting.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
     }
 
     @SubscribeEvent

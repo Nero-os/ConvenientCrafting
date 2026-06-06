@@ -1,4 +1,4 @@
-package com.adore.smartbundle;
+package com.adore.convenientcrafting;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -18,7 +18,7 @@ import java.util.*;
 public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPacketPayload {
 
     public static final Type<CraftRecipePacket> TYPE = new Type<>(
-        ResourceLocation.fromNamespaceAndPath(SmartBundle.MODID, "craft_recipe")
+        ResourceLocation.fromNamespaceAndPath(ConvenientCrafting.MODID, "craft_recipe")
     );
 
     public static final StreamCodec<RegistryFriendlyByteBuf, CraftRecipePacket> STREAM_CODEC =

@@ -1,4 +1,4 @@
-package com.adore.smartbundle;
+package com.adore.convenientcrafting;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -12,7 +12,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public record SortInventoryPacket(boolean isContainer) implements CustomPacketPayload {
     public static final Type<SortInventoryPacket> TYPE = new Type<>(
-        ResourceLocation.fromNamespaceAndPath(SmartBundle.MODID, "sort_inventory")
+        ResourceLocation.fromNamespaceAndPath(ConvenientCrafting.MODID, "sort_inventory")
     );
 
     public static final StreamCodec<RegistryFriendlyByteBuf, SortInventoryPacket> STREAM_CODEC =

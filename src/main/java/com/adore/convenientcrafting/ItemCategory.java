@@ -1,4 +1,4 @@
-package com.adore.smartbundle;
+package com.adore.convenientcrafting;
 
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.Item;

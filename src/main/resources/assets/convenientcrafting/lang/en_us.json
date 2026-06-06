@@ -1,0 +1,11 @@
+{
+  "itemGroup.convenientcrafting": "Convenient Crafting",
+  "block.convenientcrafting.example_block": "Convenient Crafting Block",
+  "item.convenientcrafting.example_item": "Convenient Crafting Item",
+
+  "button.convenientcrafting.sort": "Sort Inventory",
+
+  "key.convenientcrafting.open_craft_helper": "Open Convenient Crafting",
+  "key.categories.convenientcrafting": "Convenient Crafting",
+  "gui.convenientcrafting.craft_helper": "Convenient Crafting"
+}
