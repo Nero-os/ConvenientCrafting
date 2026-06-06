@@ -1,4 +1,4 @@
-﻿package com.adore.smartbundle;
+package com.adore.smartbundle;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -73,8 +73,8 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
     }
 
     private static boolean hasIngredients(Inventory inventory, CraftingRecipe recipe) {
-        List<ItemStack> ingredients = getIngredientList(recipe);
-        if (ingredients.isEmpty()) return true;
+        List<Ingredient> ingredients = getIngredients(recipe);
+        if (ingredients.isEmpty()) return false;
 
         // Build a mutable copy of available items
         List<ItemStack> available = new ArrayList<>();
@@ -86,19 +86,17 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
         }
 
         // Try to match each ingredient
-        for (ItemStack needed : ingredients) {
-            if (needed.isEmpty()) continue;
-            int needCount = needed.getCount();
+        for (Ingredient ingredient : ingredients) {
+            boolean found = false;
             for (ItemStack avail : available) {
                 if (avail.isEmpty()) continue;
-                if (ItemStack.isSameItemSameComponents(avail, needed)) {
-                    int taken = Math.min(avail.getCount(), needCount);
-                    avail.shrink(taken);
-                    needCount -= taken;
-                    if (needCount <= 0) break;
+                if (ingredient.test(avail)) {
+                    avail.shrink(1);
+                    found = true;
+                    break;
                 }
             }
-            if (needCount > 0) return false;
+            if (!found) return false;
         }
         return true;
     }
@@ -131,47 +129,42 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
     }
 
     private static void consumeIngredients(Inventory inventory, CraftingRecipe recipe) {
-        List<ItemStack> ingredients = getIngredientList(recipe);
+        List<Ingredient> ingredients = getIngredients(recipe);
 
-        for (ItemStack needed : ingredients) {
-            if (needed.isEmpty()) continue;
-            int needCount = needed.getCount();
-
+        for (Ingredient ingredient : ingredients) {
             for (int i = 0; i < inventory.getContainerSize(); i++) {
                 ItemStack stack = inventory.getItem(i);
                 if (stack.isEmpty()) continue;
-                if (ItemStack.isSameItemSameComponents(stack, needed)) {
-                    int taken = Math.min(stack.getCount(), needCount);
-                    stack.shrink(taken);
-                    needCount -= taken;
+                if (ingredient.test(stack)) {
+                    stack.shrink(1);
                     if (stack.isEmpty()) {
                         inventory.setItem(i, ItemStack.EMPTY);
                     }
-                    if (needCount <= 0) break;
+                    break;
                 }
             }
         }
     }
 
-    private static List<ItemStack> getIngredientList(CraftingRecipe recipe) {
-        List<ItemStack> result = new ArrayList<>();
+    private static List<Ingredient> getIngredients(CraftingRecipe recipe) {
+        List<Ingredient> result = new ArrayList<>();
 
         if (recipe instanceof ShapedRecipe shaped) {
             for (Ingredient ing : shaped.getIngredients()) {
-                ItemStack[] matches = ing.getItems();
-                if (matches.length > 0) {
-                    result.add(matches[0].copy());
-                }
+                addNonEmptyIngredient(result, ing);
             }
         } else if (recipe instanceof ShapelessRecipe shapeless) {
             for (Ingredient ing : shapeless.getIngredients()) {
-                ItemStack[] matches = ing.getItems();
-                if (matches.length > 0) {
-                    result.add(matches[0].copy());
-                }
+                addNonEmptyIngredient(result, ing);
             }
         }
 
         return result;
+    }
+
+    private static void addNonEmptyIngredient(List<Ingredient> ingredients, Ingredient ingredient) {
+        if (ingredient.getItems().length > 0) {
+            ingredients.add(ingredient);
+        }
     }
 }

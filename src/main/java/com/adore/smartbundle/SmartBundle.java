@@ -1,4 +1,4 @@
-﻿package com.adore.smartbundle;
+package com.adore.smartbundle;
 
 import org.slf4j.Logger;
 
