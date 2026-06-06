@@ -19,6 +19,12 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * 合成助手界面。
+ *
+ * <p>界面会列出当前世界注册的所有工作台合成配方，并支持搜索、仅显示可合成配方、
+ * 按可合成状态和玩家已有产物数量排序，以及向服务端发送一键合成请求。</p>
+ */
 public class CraftHelperScreen extends Screen {
 
     private static final int PANEL_WIDTH = 260;
@@ -42,13 +48,23 @@ public class CraftHelperScreen extends Screen {
     private List<RecipeHolder<CraftingRecipe>> allRecipes = new ArrayList<>();
     private List<RecipeHolder<CraftingRecipe>> sortedRecipes = new ArrayList<>();
 
-    // 玩家背包快照缓存，用于排序评分
+    /**
+     * 玩家背包快照缓存，用于排序评分。
+     *
+     * <p>键为物品注册名，值为当前背包中该物品的总数量。</p>
+     */
     private Map<String, Integer> cachedInventoryCounts = new HashMap<>();
 
+    /**
+     * 创建合成助手界面。
+     */
     protected CraftHelperScreen() {
         super(Component.translatable("gui.convenientcrafting.craft_helper"));
     }
 
+    /**
+     * 初始化界面位置、配方列表、背包缓存和排序结果。
+     */
     @Override
     protected void init() {
         panelX = (width - PANEL_WIDTH) / 2;
@@ -60,10 +76,13 @@ public class CraftHelperScreen extends Screen {
         refreshButtons();
     }
 
-    // ──────────────────────────────────────────────
-    //  配方加载（全量扫描，JEI 兼容）
-    // ──────────────────────────────────────────────
-
+    /**
+     * 加载当前世界中的所有工作台合成配方。
+     *
+     * <p>该方法从客户端世界的配方管理器读取 {@link RecipeType#CRAFTING} 配方。
+     * 通过数据包或 datapack 注册的模组配方也会出现在这里；使用 {@code seen} 去重，
+     * 避免相同配方 ID 被重复加入。</p>
+     */
     private void loadRecipes() {
         allRecipes.clear();
 
@@ -84,10 +103,12 @@ public class CraftHelperScreen extends Screen {
         }
     }
 
-    // ──────────────────────────────────────────────
-    //  智能排序
-    // ──────────────────────────────────────────────
-
+    /**
+     * 刷新玩家背包物品数量缓存。
+     *
+     * <p>排序时需要知道玩家已经拥有多少个配方产物。每次点击刷新或合成后，
+     * 都会重建一次缓存，避免排序依据停留在旧背包状态。</p>
+     */
     private void refreshInventoryCache() {
         cachedInventoryCounts.clear();
         Minecraft mc = Minecraft.getInstance();
@@ -103,13 +124,22 @@ public class CraftHelperScreen extends Screen {
     }
 
     /**
-     * 用物品注册名 + 组件标签作为唯一标识键，替代 1.21.2+ 的 ItemStack.keyOf()
+     * 构建用于背包数量缓存的物品键。
+     *
+     * @param stack 要生成键的物品堆
+     * @return 物品注册名字符串；注册名不存在时返回降级键
      */
     private static String buildItemKey(ItemStack stack) {
         ResourceLocation loc = BuiltInRegistries.ITEM.getKey(stack.getItem());
         return loc != null ? loc.toString() : "unknown:" + stack.getItem();
     }
 
+    /**
+     * 根据当前筛选条件和排序规则刷新配方列表。
+     *
+     * <p>排序分三层：先把可合成的配方排在前面；再把玩家背包中已有产物更多的配方排在前面；
+     * 最后使用产物名称做稳定兜底排序。可合成状态会预先缓存，避免排序比较器反复扫描背包。</p>
+     */
     private void sortRecipes() {
         // 预先计算每个配方当前是否能合成
         Map<ResourceLocation, Boolean> craftableCache = new HashMap<>();
@@ -129,19 +159,19 @@ public class CraftHelperScreen extends Screen {
                     boolean canCraftA = craftableCache.getOrDefault(a.id(), false);
                     boolean canCraftB = craftableCache.getOrDefault(b.id(), false);
 
-                    // 规则1：可合成的排前面
+                    // 规则 1：可合成配方优先展示，玩家打开面板后能立刻看到可执行操作。
                     if (canCraftA != canCraftB) {
                         return canCraftA ? -1 : 1;
                     }
 
-                    // 规则2：玩家已有产物的排前面，按数量降序
+                    // 规则 2：已有产物越多，说明玩家更可能在补充同类物品，因此按数量降序。
                     int countA = cachedInventoryCounts.getOrDefault(buildItemKey(resultA), 0);
                     int countB = cachedInventoryCounts.getOrDefault(buildItemKey(resultB), 0);
                     if (countA != countB) {
                         return Integer.compare(countB, countA);
                     }
 
-                    // 规则3：字母序保底
+                    // 规则 3：前两项都相同则按名称排序，保证列表顺序稳定。
                     String nameA = resultA.getHoverName().getString();
                     String nameB = resultB.getHoverName().getString();
                     return nameA.compareToIgnoreCase(nameB);
@@ -156,6 +186,13 @@ public class CraftHelperScreen extends Screen {
         }
     }
 
+    /**
+     * 判断配方是否符合当前筛选条件。
+     *
+     * @param holder 配方持有者
+     * @param craftableCache 可合成状态缓存
+     * @return 通过筛选时返回 {@code true}
+     */
     private boolean matchesFilters(RecipeHolder<CraftingRecipe> holder, Map<ResourceLocation, Boolean> craftableCache) {
         if (onlyCraftable && !craftableCache.getOrDefault(holder.id(), false)) {
             return false;
@@ -176,18 +213,24 @@ public class CraftHelperScreen extends Screen {
         return itemName.contains(query) || itemId.contains(query);
     }
 
-    // ──────────────────────────────────────────────
-    //  按钮 & UI
-    // ──────────────────────────────────────────────
-
+    /**
+     * 刷新界面按钮。
+     *
+     * <p>当前面板按钮由渲染方法手绘，因此这里主要清理原生小部件列表。</p>
+     */
     private void refreshButtons() {
         clearWidgets();
     }
 
-    // ──────────────────────────────────────────────
-    //  可合成检测
-    // ──────────────────────────────────────────────
-
+    /**
+     * 判断当前玩家背包是否能合成指定配方。
+     *
+     * <p>算法和服务端校验保持一致：先复制背包中所有非空物品堆，再逐个材料槽尝试匹配。
+     * 每次匹配成功都会从副本中扣 1 个物品，确保同一份材料不会被多个配方槽重复使用。</p>
+     *
+     * @param recipe 要检查的合成配方
+     * @return 背包材料足够时返回 {@code true}
+     */
     private boolean canCraftRecipe(CraftingRecipe recipe) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return false;
@@ -199,6 +242,7 @@ public class CraftHelperScreen extends Screen {
         for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
             ItemStack stack = mc.player.getInventory().getItem(i);
             if (!stack.isEmpty()) {
+                // 使用副本参与匹配，避免客户端预览阶段直接修改玩家背包。
                 available.add(stack.copy());
             }
         }
@@ -207,6 +251,7 @@ public class CraftHelperScreen extends Screen {
             boolean found = false;
             for (ItemStack stack : available) {
                 if (!stack.isEmpty() && ingredient.test(stack)) {
+                    // 命中一个材料槽后扣减 1 个副本数量，防止同一个物品被多个材料槽重复占用。
                     stack.shrink(1);
                     found = true;
                     break;
@@ -217,6 +262,12 @@ public class CraftHelperScreen extends Screen {
         return true;
     }
 
+    /**
+     * 提取合成配方中的非空材料。
+     *
+     * @param recipe 要解析的合成配方
+     * @return 去除空槽后的材料列表
+     */
     private List<Ingredient> getIngredients(CraftingRecipe recipe) {
         List<Ingredient> ingredients = new ArrayList<>();
 
@@ -233,12 +284,24 @@ public class CraftHelperScreen extends Screen {
         return ingredients;
     }
 
+    /**
+     * 仅在材料包含可匹配物品时加入列表。
+     *
+     * @param ingredients 目标材料列表
+     * @param ingredient 待加入的材料
+     */
     private static void addNonEmptyIngredient(List<Ingredient> ingredients, Ingredient ingredient) {
         if (ingredient.getItems().length > 0) {
             ingredients.add(ingredient);
         }
     }
 
+    /**
+     * 获取用于界面展示的材料图标。
+     *
+     * @param recipe 要展示的合成配方
+     * @return 每个材料槽的第一个可匹配物品堆
+     */
     private ItemStack[] getIngredientStacks(CraftingRecipe recipe) {
         List<Ingredient> ingredients = getIngredients(recipe);
         ItemStack[] stacks = new ItemStack[ingredients.size()];
@@ -249,10 +312,14 @@ public class CraftHelperScreen extends Screen {
         return stacks;
     }
 
-    // ──────────────────────────────────────────────
-    //  渲染
-    // ──────────────────────────────────────────────
-
+    /**
+     * 渲染合成助手面板。
+     *
+     * @param guiGraphics 图形绘制上下文
+     * @param mouseX 鼠标 X 坐标
+     * @param mouseY 鼠标 Y 坐标
+     * @param partialTick 局部帧时间
+     */
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(guiGraphics, mouseX, mouseY, partialTick);
@@ -332,6 +399,11 @@ public class CraftHelperScreen extends Screen {
         drawNavigationButtons(guiGraphics);
     }
 
+    /**
+     * 绘制“仅可合成”筛选框和搜索输入框。
+     *
+     * @param guiGraphics 图形绘制上下文
+     */
     private void drawFilterControls(GuiGraphics guiGraphics) {
         int checkboxX = panelX + 10;
         int controlsY = panelY + CONTROLS_Y_OFFSET;
@@ -368,6 +440,11 @@ public class CraftHelperScreen extends Screen {
         }
     }
 
+    /**
+     * 绘制分页、刷新和关闭按钮。
+     *
+     * @param guiGraphics 图形绘制上下文
+     */
     private void drawNavigationButtons(GuiGraphics guiGraphics) {
         int totalPages = getTotalPages();
         if (totalPages > 1) {
@@ -379,6 +456,17 @@ public class CraftHelperScreen extends Screen {
         drawPanelButton(guiGraphics, panelX + PANEL_WIDTH - 22, panelY - 5, 20, 20, "X", true);
     }
 
+    /**
+     * 绘制手写风格的面板按钮。
+     *
+     * @param guiGraphics 图形绘制上下文
+     * @param x 按钮左上角 X 坐标
+     * @param y 按钮左上角 Y 坐标
+     * @param buttonWidth 按钮宽度
+     * @param buttonHeight 按钮高度
+     * @param label 按钮显示文本
+     * @param active 按钮是否可用
+     */
     private void drawPanelButton(GuiGraphics guiGraphics, int x, int y, int buttonWidth, int buttonHeight, String label, boolean active) {
         int borderColor = active ? 0xFF4F6CFF : 0xFF343434;
         int fillColor = active ? 0xFF2A2E38 : 0xFF1A1A1A;
@@ -390,13 +478,37 @@ public class CraftHelperScreen extends Screen {
         guiGraphics.drawString(font, label, x + (buttonWidth - font.width(label)) / 2, y + (buttonHeight - 8) / 2, textColor, false);
     }
 
+    /**
+     * 处理鼠标点击事件。
+     *
+     * <p>左键用于切换筛选、翻页、刷新、关闭和发起合成；右键点击搜索框时会清空搜索内容。</p>
+     *
+     * @param mouseX 鼠标 X 坐标
+     * @param mouseY 鼠标 Y 坐标
+     * @param button 鼠标按钮编号
+     * @return 事件已处理时返回 {@code true}
+     */
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        int controlsY = panelY + CONTROLS_Y_OFFSET;
+        int searchX = panelX + 76;
+        int searchWidth = PANEL_WIDTH - 116;
+
+        if (button == 1 && isInside(mouseX, mouseY, searchX, controlsY + 1, searchWidth, 18)) {
+            searchFocused = true;
+            if (!searchText.isEmpty()) {
+                searchText = "";
+                currentPage = 0;
+                sortRecipes();
+                refreshButtons();
+            }
+            return true;
+        }
+
         if (button != 0) {
             return super.mouseClicked(mouseX, mouseY, button);
         }
 
-        int controlsY = panelY + CONTROLS_Y_OFFSET;
         if (isInside(mouseX, mouseY, panelX + 10, controlsY + 3, 64, 14)) {
             onlyCraftable = !onlyCraftable;
             currentPage = 0;
@@ -405,8 +517,6 @@ public class CraftHelperScreen extends Screen {
             return true;
         }
 
-        int searchX = panelX + 76;
-        int searchWidth = PANEL_WIDTH - 116;
         if (isInside(mouseX, mouseY, searchX, controlsY + 1, searchWidth, 18)) {
             searchFocused = true;
             return true;
@@ -455,18 +565,46 @@ public class CraftHelperScreen extends Screen {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
+    /**
+     * 获取当前筛选结果的总页数。
+     *
+     * @return 总页数
+     */
     private int getTotalPages() {
         return (sortedRecipes.size() + RECIPE_PER_PAGE - 1) / RECIPE_PER_PAGE;
     }
 
+    /**
+     * 根据列表行号计算配方条目的 Y 坐标。
+     *
+     * @param rowIndex 当前页中的行号
+     * @return 条目顶部 Y 坐标
+     */
     private int getRecipeY(int rowIndex) {
         return panelY + LIST_Y_OFFSET + rowIndex * ROW_HEIGHT;
     }
 
+    /**
+     * 判断鼠标坐标是否位于指定矩形内。
+     *
+     * @param mouseX 鼠标 X 坐标
+     * @param mouseY 鼠标 Y 坐标
+     * @param x 矩形左上角 X 坐标
+     * @param y 矩形左上角 Y 坐标
+     * @param buttonWidth 矩形宽度
+     * @param buttonHeight 矩形高度
+     * @return 位于矩形内时返回 {@code true}
+     */
     private static boolean isInside(double mouseX, double mouseY, int x, int y, int buttonWidth, int buttonHeight) {
         return mouseX >= x && mouseX < x + buttonWidth && mouseY >= y && mouseY < y + buttonHeight;
     }
 
+    /**
+     * 判断玩家背包中是否有足够数量的指定材料。
+     *
+     * @param needed 需要展示或检查的材料
+     * @return 背包中同物品同组件的数量足够时返回 {@code true}
+     */
     private boolean hasItemInInventory(ItemStack needed) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return false;
@@ -481,11 +619,24 @@ public class CraftHelperScreen extends Screen {
         return false;
     }
 
+    /**
+     * 合成助手界面不会暂停游戏。
+     *
+     * @return 始终返回 {@code false}
+     */
     @Override
     public boolean isPauseScreen() {
         return false;
     }
 
+    /**
+     * 处理键盘按键事件。
+     *
+     * @param keyCode 按键码
+     * @param scanCode 扫描码
+     * @param modifiers 修饰键掩码
+     * @return 事件已处理时返回 {@code true}
+     */
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (searchFocused) {
@@ -520,6 +671,13 @@ public class CraftHelperScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
+    /**
+     * 处理搜索框字符输入。
+     *
+     * @param codePoint 输入字符
+     * @param modifiers 修饰键掩码
+     * @return 事件已处理时返回 {@code true}
+     */
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
         if (!searchFocused || Character.isISOControl(codePoint)) {

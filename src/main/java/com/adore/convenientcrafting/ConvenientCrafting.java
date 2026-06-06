@@ -32,21 +32,57 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
+/**
+ * Convenient Crafting 模组的公共入口类。
+ *
+ * <p>负责注册方块、物品、创造模式标签、配置项和客户端到服务端的数据包处理器。</p>
+ */
 @Mod(ConvenientCrafting.MODID)
 public class ConvenientCrafting {
+    /**
+     * 模组 ID，用于注册资源位置、配置和事件订阅。
+     */
     public static final String MODID = "convenientcrafting";
+
+    /**
+     * 模组日志记录器。
+     */
     public static final Logger LOGGER = LogUtils.getLogger();
 
+    /**
+     * 方块延迟注册器。
+     */
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(MODID);
+
+    /**
+     * 物品延迟注册器。
+     */
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MODID);
+
+    /**
+     * 创造模式标签延迟注册器。
+     */
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);
 
+    /**
+     * 示例方块注册项。
+     */
     public static final DeferredBlock<Block> EXAMPLE_BLOCK = BLOCKS.registerSimpleBlock("example_block", BlockBehaviour.Properties.of().mapColor(MapColor.STONE));
+
+    /**
+     * 示例方块对应的物品注册项。
+     */
     public static final DeferredItem<BlockItem> EXAMPLE_BLOCK_ITEM = ITEMS.registerSimpleBlockItem("example_block", EXAMPLE_BLOCK);
 
+    /**
+     * 示例可食用物品注册项。
+     */
     public static final DeferredItem<Item> EXAMPLE_ITEM = ITEMS.registerSimpleItem("example_item", new Item.Properties().food(new FoodProperties.Builder()
             .alwaysEdible().nutrition(1).saturationModifier(2f).build()));
 
+    /**
+     * 示例创造模式标签。
+     */
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> EXAMPLE_TAB = CREATIVE_MODE_TABS.register("example_tab", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.convenientcrafting"))
             .withTabsBefore(CreativeModeTabs.COMBAT)
@@ -55,6 +91,12 @@ public class ConvenientCrafting {
                 output.accept(EXAMPLE_ITEM.get());
             }).build());
 
+    /**
+     * 创建模组入口并注册生命周期监听器。
+     *
+     * @param modEventBus 模组事件总线
+     * @param modContainer 当前模组容器
+     */
     public ConvenientCrafting(IEventBus modEventBus, ModContainer modContainer) {
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::registerPackets);
@@ -70,6 +112,11 @@ public class ConvenientCrafting {
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
     }
 
+    /**
+     * 注册客户端发往服务端的自定义数据包。
+     *
+     * @param event 数据包处理器注册事件
+     */
     private void registerPackets(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar("1");
         registrar.playToServer(
@@ -84,6 +131,11 @@ public class ConvenientCrafting {
         );
     }
 
+    /**
+     * 执行公共初始化逻辑。
+     *
+     * @param event 公共初始化事件
+     */
     private void commonSetup(FMLCommonSetupEvent event) {
         LOGGER.info("HELLO FROM COMMON SETUP");
 
@@ -96,12 +148,22 @@ public class ConvenientCrafting {
         Config.ITEM_STRINGS.get().forEach((item) -> LOGGER.info("ITEM >> {}", item));
     }
 
+    /**
+     * 将示例方块物品加入建筑方块创造模式标签。
+     *
+     * @param event 创造模式标签内容构建事件
+     */
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.BUILDING_BLOCKS) {
             event.accept(EXAMPLE_BLOCK_ITEM);
         }
     }
 
+    /**
+     * 服务器启动时的调试日志事件。
+     *
+     * @param event 服务器启动事件
+     */
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
         LOGGER.info("HELLO from server starting");

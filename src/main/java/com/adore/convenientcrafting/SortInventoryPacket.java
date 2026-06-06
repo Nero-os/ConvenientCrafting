@@ -10,11 +10,22 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
+/**
+ * 客户端请求服务端整理背包或当前容器的数据包。
+ *
+ * @param isContainer {@code true} 表示整理当前打开的容器，{@code false} 表示整理玩家背包
+ */
 public record SortInventoryPacket(boolean isContainer) implements CustomPacketPayload {
+    /**
+     * 数据包类型标识。
+     */
     public static final Type<SortInventoryPacket> TYPE = new Type<>(
         ResourceLocation.fromNamespaceAndPath(ConvenientCrafting.MODID, "sort_inventory")
     );
 
+    /**
+     * 背包整理请求的数据包编解码器。
+     */
     public static final StreamCodec<RegistryFriendlyByteBuf, SortInventoryPacket> STREAM_CODEC =
         StreamCodec.composite(
             ByteBufCodecs.BOOL,
@@ -22,11 +33,22 @@ public record SortInventoryPacket(boolean isContainer) implements CustomPacketPa
             SortInventoryPacket::new
         );
 
+    /**
+     * 获取 NeoForge 自定义数据包类型。
+     *
+     * @return 当前数据包类型
+     */
     @Override
     public Type<? extends CustomPacketPayload> type() {
         return TYPE;
     }
 
+    /**
+     * 在服务端线程处理整理请求。
+     *
+     * @param message 客户端发来的整理请求
+     * @param context 数据包处理上下文
+     */
     public static void handleServer(SortInventoryPacket message, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player) {
@@ -49,9 +71,20 @@ public record SortInventoryPacket(boolean isContainer) implements CustomPacketPa
         });
     }
 
+    /**
+     * 把 {@link AbstractContainerMenu} 的槽位列表适配成 {@link net.minecraft.world.Container}。
+     *
+     * <p>整理器只依赖 {@code Container} 接口，而玩家当前打开的菜单持有的是槽位列表。
+     * 该适配器负责把 get、set、remove 等容器操作转发到菜单槽位上。</p>
+     */
     private static class SlotListContainer implements net.minecraft.world.Container {
         private final AbstractContainerMenu menu;
 
+        /**
+         * 创建菜单槽位容器适配器。
+         *
+         * @param menu 要适配的容器菜单
+         */
         public SlotListContainer(AbstractContainerMenu menu) {
             this.menu = menu;
         }

@@ -23,10 +23,18 @@ import net.neoforged.neoforge.common.util.Lazy;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
+/**
+ * Convenient Crafting 的客户端入口类。
+ *
+ * <p>负责注册配置界面、快捷键、按键监听，以及在玩家背包界面中注入整理按钮。</p>
+ */
 @Mod(value = ConvenientCrafting.MODID, dist = Dist.CLIENT)
 @EventBusSubscriber(modid = ConvenientCrafting.MODID, value = Dist.CLIENT)
 public class ConvenientCraftingClient {
 
+    /**
+     * 打开合成助手界面的快捷键，默认绑定为 G。
+     */
     private static final Lazy<net.minecraft.client.KeyMapping> OPEN_CRAFT_HELPER_KEY = Lazy.of(() ->
         new net.minecraft.client.KeyMapping(
             "key.convenientcrafting.open_craft_helper",
@@ -38,21 +46,41 @@ public class ConvenientCraftingClient {
         )
     );
 
+    /**
+     * 创建客户端入口并注册配置界面工厂。
+     *
+     * @param container 当前模组容器
+     */
     public ConvenientCraftingClient(ModContainer container) {
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
     }
 
+    /**
+     * 客户端初始化事件，用于输出调试日志。
+     *
+     * @param event 客户端初始化事件
+     */
     @SubscribeEvent
     static void onClientSetup(FMLClientSetupEvent event) {
         ConvenientCrafting.LOGGER.info("HELLO FROM CLIENT SETUP");
         ConvenientCrafting.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
     }
 
+    /**
+     * 注册打开合成助手的快捷键。
+     *
+     * @param event 快捷键注册事件
+     */
     @SubscribeEvent
     static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {
         event.register(OPEN_CRAFT_HELPER_KEY.get());
     }
 
+    /**
+     * 监听客户端按键输入并打开合成助手界面。
+     *
+     * @param event 键盘输入事件
+     */
     @SubscribeEvent
     static void onKeyInput(InputEvent.Key event) {
         if (OPEN_CRAFT_HELPER_KEY.get().consumeClick()) {
@@ -63,6 +91,11 @@ public class ConvenientCraftingClient {
         }
     }
 
+    /**
+     * 在原版玩家背包界面初始化后添加整理按钮。
+     *
+     * @param event 界面初始化完成事件
+     */
     @SubscribeEvent
     static void onScreenInit(ScreenEvent.Init.Post event) {
         Screen screen = event.getScreen();
