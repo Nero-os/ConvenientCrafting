@@ -11,8 +11,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
-import net.minecraft.world.item.crafting.ShapedRecipe;
-import net.minecraft.world.item.crafting.ShapelessRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipeInput;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -113,10 +111,11 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
     private static CraftingResult buildCraftingResult(ServerPlayer player, Recipe<?> recipe) {
         var server = player.getServer();
         if (server == null) return null;
+        if (!RecipeSupport.isUnlockedFor(player, recipe)) return null;
 
         if (recipe instanceof CraftingRecipe craftingRecipe) {
             ItemStack result = craftingRecipe.getResultItem(server.registryAccess()).copy();
-            List<Ingredient> ingredients = getIngredients(craftingRecipe);
+            List<Ingredient> ingredients = RecipeSupport.getNonEmptyIngredients(craftingRecipe);
             List<IngredientUse> matchedIngredients = matchIngredients(player, ingredients);
             if (matchedIngredients.isEmpty()) return null;
             return result.isEmpty() ? null : new CraftingResult(result, matchedIngredients);
@@ -137,6 +136,13 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
                     match.base(),
                     match.addition()
             ));
+        }
+
+        if (RecipeSupport.isConfiguredSimpleRecipe(recipe, server.registryAccess())) {
+            ItemStack result = recipe.getResultItem(server.registryAccess()).copy();
+            List<IngredientUse> matchedIngredients = matchIngredients(player, RecipeSupport.getNonEmptyIngredients(recipe));
+            if (matchedIngredients.isEmpty()) return null;
+            return result.isEmpty() ? null : new CraftingResult(result, matchedIngredients);
         }
 
         return null;
@@ -337,40 +343,6 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
             player.getInventory().setItem(source.slotIndex(), stack);
         } else {
             player.containerMenu.getSlot(source.slotIndex()).set(stack);
-        }
-    }
-
-    /**
-     * 提取有序或无序合成配方中的非空材料。
-     *
-     * @param recipe 要解析的合成配方
-     * @return 去除空占位后的材料列表
-     */
-    private static List<Ingredient> getIngredients(CraftingRecipe recipe) {
-        List<Ingredient> result = new ArrayList<>();
-
-        if (recipe instanceof ShapedRecipe shaped) {
-            for (Ingredient ing : shaped.getIngredients()) {
-                addNonEmptyIngredient(result, ing);
-            }
-        } else if (recipe instanceof ShapelessRecipe shapeless) {
-            for (Ingredient ing : shapeless.getIngredients()) {
-                addNonEmptyIngredient(result, ing);
-            }
-        }
-
-        return result;
-    }
-
-    /**
-     * 仅在材料至少有一个可匹配物品时加入列表。
-     *
-     * @param ingredients 目标材料列表
-     * @param ingredient 待加入的材料
-     */
-    private static void addNonEmptyIngredient(List<Ingredient> ingredients, Ingredient ingredient) {
-        if (ingredient.getItems().length > 0) {
-            ingredients.add(ingredient);
         }
     }
 

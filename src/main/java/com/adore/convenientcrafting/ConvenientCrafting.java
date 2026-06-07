@@ -106,6 +106,7 @@ public class ConvenientCrafting {
         CREATIVE_MODE_TABS.register(modEventBus);
 
         NeoForge.EVENT_BUS.register(this);
+        NeoForge.EVENT_BUS.register(new RecipeUnlocks());
 
         modEventBus.addListener(this::addCreative);
 
@@ -128,6 +129,11 @@ public class ConvenientCrafting {
             CraftRecipePacket.TYPE,
             CraftRecipePacket.STREAM_CODEC,
             CraftRecipePacket::handleServer
+        );
+        registrar.playToClient(
+            RecipeUnlockSyncPacket.TYPE,
+            RecipeUnlockSyncPacket.STREAM_CODEC,
+            RecipeUnlockSyncPacket::handleClient
         );
     }
 
