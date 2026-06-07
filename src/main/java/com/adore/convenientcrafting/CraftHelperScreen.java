@@ -10,19 +10,23 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.item.crafting.ShapelessRecipe;
+import net.minecraft.world.item.crafting.SmithingRecipe;
+import net.minecraft.world.item.crafting.SmithingRecipeInput;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
  * 合成助手界面。
  *
- * <p>界面会列出当前世界注册的所有工作台合成配方，并支持搜索、仅显示可合成配方、
+ * <p>界面会列出当前世界注册的工作台和锻造台配方，并支持搜索、仅显示可合成配方、
  * 按可合成状态和玩家已有产物数量排序，以及向服务端发送一键合成请求。</p>
  */
 public class CraftHelperScreen extends Screen {
@@ -45,8 +49,8 @@ public class CraftHelperScreen extends Screen {
     private boolean onlyCraftable = false;
     private boolean searchFocused = false;
     private String searchText = "";
-    private List<RecipeHolder<CraftingRecipe>> allRecipes = new ArrayList<>();
-    private List<RecipeHolder<CraftingRecipe>> sortedRecipes = new ArrayList<>();
+    private List<RecipeHolder<?>> allRecipes = new ArrayList<>();
+    private List<RecipeHolder<?>> sortedRecipes = new ArrayList<>();
 
     /**
      * 玩家背包快照缓存，用于排序评分。
@@ -79,7 +83,8 @@ public class CraftHelperScreen extends Screen {
     /**
      * 加载当前世界中的所有工作台合成配方。
      *
-     * <p>该方法从客户端世界的配方管理器读取 {@link RecipeType#CRAFTING} 配方。
+     * <p>该方法从客户端世界的配方管理器读取 {@link RecipeType#CRAFTING} 和
+     * {@link RecipeType#SMITHING} 配方。
      * 通过数据包或 datapack 注册的模组配方也会出现在这里；使用 {@code seen} 去重，
      * 避免相同配方 ID 被重复加入。</p>
      */
@@ -92,11 +97,19 @@ public class CraftHelperScreen extends Screen {
         Set<ResourceLocation> seen = new HashSet<>();
         var recipeManager = mc.level.getRecipeManager();
 
-        // 获取所有已注册的 CRAFTING 类型配方
-        // JEI 和其他模组通过 datapack 添加的合成配方也会出现在这里
+        // 获取所有已注册的 CRAFTING 类型配方。
         for (RecipeHolder<CraftingRecipe> holder : recipeManager.getAllRecipesFor(RecipeType.CRAFTING)) {
             CraftingRecipe recipe = holder.value();
             ItemStack result = recipe.getResultItem(mc.level.registryAccess());
+            if (!result.isEmpty() && seen.add(holder.id())) {
+                allRecipes.add(holder);
+            }
+        }
+
+        // 获取所有已注册的 SMITHING 类型配方，先支持锻造台的一键合成。
+        for (RecipeHolder<SmithingRecipe> holder : recipeManager.getAllRecipesFor(RecipeType.SMITHING)) {
+            SmithingRecipe recipe = holder.value();
+            ItemStack result = getRecipeResult(recipe);
             if (!result.isEmpty() && seen.add(holder.id())) {
                 allRecipes.add(holder);
             }
@@ -143,7 +156,7 @@ public class CraftHelperScreen extends Screen {
     private void sortRecipes() {
         // 预先计算每个配方当前是否能合成
         Map<ResourceLocation, Boolean> craftableCache = new HashMap<>();
-        for (RecipeHolder<CraftingRecipe> holder : allRecipes) {
+        for (RecipeHolder<?> holder : allRecipes) {
             craftableCache.put(holder.id(), canCraftRecipe(holder.value()));
         }
 
@@ -153,8 +166,8 @@ public class CraftHelperScreen extends Screen {
                     Minecraft mc = Minecraft.getInstance();
                     if (mc.level == null) return 0;
 
-                    ItemStack resultA = a.value().getResultItem(mc.level.registryAccess());
-                    ItemStack resultB = b.value().getResultItem(mc.level.registryAccess());
+                    ItemStack resultA = getRecipeResult(a.value());
+                    ItemStack resultB = getRecipeResult(b.value());
 
                     boolean canCraftA = craftableCache.getOrDefault(a.id(), false);
                     boolean canCraftB = craftableCache.getOrDefault(b.id(), false);
@@ -193,7 +206,7 @@ public class CraftHelperScreen extends Screen {
      * @param craftableCache 可合成状态缓存
      * @return 通过筛选时返回 {@code true}
      */
-    private boolean matchesFilters(RecipeHolder<CraftingRecipe> holder, Map<ResourceLocation, Boolean> craftableCache) {
+    private boolean matchesFilters(RecipeHolder<?> holder, Map<ResourceLocation, Boolean> craftableCache) {
         if (onlyCraftable && !craftableCache.getOrDefault(holder.id(), false)) {
             return false;
         }
@@ -206,7 +219,7 @@ public class CraftHelperScreen extends Screen {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return false;
 
-        ItemStack result = holder.value().getResultItem(mc.level.registryAccess());
+        ItemStack result = getRecipeResult(holder.value());
         String itemName = result.getHoverName().getString().toLowerCase(Locale.ROOT);
         ResourceLocation itemKey = BuiltInRegistries.ITEM.getKey(result.getItem());
         String itemId = itemKey != null ? itemKey.toString().toLowerCase(Locale.ROOT) : "";
@@ -228,36 +241,43 @@ public class CraftHelperScreen extends Screen {
      * <p>算法和服务端校验保持一致：先复制背包中所有非空物品堆，再逐个材料槽尝试匹配。
      * 每次匹配成功都会从副本中扣 1 个物品，确保同一份材料不会被多个配方槽重复使用。</p>
      *
-     * @param recipe 要检查的合成配方
+     * @param recipe 要检查的配方
      * @return 背包材料足够时返回 {@code true}
      */
-    private boolean canCraftRecipe(CraftingRecipe recipe) {
+    private boolean canCraftRecipe(Recipe<?> recipe) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return false;
 
-        List<Ingredient> ingredients = getIngredients(recipe);
-        if (ingredients.isEmpty()) return false;
-
-        List<ItemStack> available = new ArrayList<>();
-        for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
-            ItemStack stack = mc.player.getInventory().getItem(i);
-            if (!stack.isEmpty()) {
-                // 使用副本参与匹配，避免客户端预览阶段直接修改玩家背包。
-                available.add(stack.copy());
-            }
+        if (recipe instanceof CraftingRecipe craftingRecipe) {
+            return hasIngredients(getIngredients(craftingRecipe));
         }
 
+        if (recipe instanceof SmithingRecipe smithingRecipe) {
+            SmithingMatch match = findSmithingMatch(smithingRecipe);
+            if (match == null || mc.level == null) return false;
+
+            SmithingRecipeInput input = new SmithingRecipeInput(match.template(), match.base(), match.addition());
+            return smithingRecipe.matches(input, mc.level) && !smithingRecipe.assemble(input, mc.level.registryAccess()).isEmpty();
+        }
+
+        return false;
+    }
+
+    /**
+     * 判断当前玩家背包是否满足一组合成材料。
+     *
+     * @param ingredients 要检查的材料列表
+     * @return 材料都能匹配时返回 {@code true}
+     */
+    private boolean hasIngredients(List<Ingredient> ingredients) {
+        if (ingredients.isEmpty()) return false;
+
+        List<ItemStack> available = getInventorySnapshot();
         for (Ingredient ingredient : ingredients) {
-            boolean found = false;
-            for (ItemStack stack : available) {
-                if (!stack.isEmpty() && ingredient.test(stack)) {
-                    // 命中一个材料槽后扣减 1 个副本数量，防止同一个物品被多个材料槽重复占用。
-                    stack.shrink(1);
-                    found = true;
-                    break;
-                }
+            ItemStack matched = takeFirstMatching(available, ingredient::test);
+            if (matched.isEmpty()) {
+                return false;
             }
-            if (!found) return false;
         }
         return true;
     }
@@ -302,14 +322,157 @@ public class CraftHelperScreen extends Screen {
      * @param recipe 要展示的合成配方
      * @return 每个材料槽的第一个可匹配物品堆
      */
-    private ItemStack[] getIngredientStacks(CraftingRecipe recipe) {
-        List<Ingredient> ingredients = getIngredients(recipe);
+    private ItemStack[] getIngredientStacks(Recipe<?> recipe) {
+        if (recipe instanceof SmithingRecipe smithingRecipe) {
+            SmithingMatch match = findSmithingMatch(smithingRecipe);
+            if (match != null) {
+                return new ItemStack[] {
+                        match.template(),
+                        match.base(),
+                        match.addition()
+                };
+            }
+
+            return new ItemStack[] {
+                    findFirstRegisteredItem(smithingRecipe::isTemplateIngredient),
+                    findFirstRegisteredItem(smithingRecipe::isBaseIngredient),
+                    findFirstRegisteredItem(smithingRecipe::isAdditionIngredient)
+            };
+        }
+
+        if (!(recipe instanceof CraftingRecipe craftingRecipe)) {
+            return new ItemStack[0];
+        }
+
+        List<Ingredient> ingredients = getIngredients(craftingRecipe);
         ItemStack[] stacks = new ItemStack[ingredients.size()];
         for (int i = 0; i < ingredients.size(); i++) {
             ItemStack[] matching = ingredients.get(i).getItems();
             stacks[i] = matching.length > 0 ? matching[0].copy() : ItemStack.EMPTY;
         }
         return stacks;
+    }
+
+    /**
+     * 获取配方的展示产物。
+     *
+     * @param recipe 要展示的配方
+     * @return 用于列表展示和搜索的产物
+     */
+    private ItemStack getRecipeResult(Recipe<?> recipe) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return ItemStack.EMPTY;
+
+        if (recipe instanceof SmithingRecipe smithingRecipe) {
+            SmithingMatch match = findSmithingMatch(smithingRecipe);
+            if (match != null) {
+                SmithingRecipeInput input = new SmithingRecipeInput(match.template(), match.base(), match.addition());
+                ItemStack assembled = smithingRecipe.assemble(input, mc.level.registryAccess());
+                if (!assembled.isEmpty()) {
+                    return assembled;
+                }
+            }
+        }
+
+        return recipe.getResultItem(mc.level.registryAccess());
+    }
+
+    /**
+     * 从玩家背包中寻找锻造台配方的三槽输入。
+     *
+     * @param recipe 锻造台配方
+     * @return 匹配到的输入；未匹配时返回 {@code null}
+     */
+    private SmithingMatch findSmithingMatch(SmithingRecipe recipe) {
+        List<ItemStack> available = getInventorySnapshot();
+
+        ItemStack template = takeFirstMatching(available, recipe::isTemplateIngredient);
+        if (template.isEmpty()) return null;
+
+        ItemStack base = takeFirstMatching(available, recipe::isBaseIngredient);
+        if (base.isEmpty()) return null;
+
+        ItemStack addition = takeFirstMatching(available, recipe::isAdditionIngredient);
+        if (addition.isEmpty()) return null;
+
+        return new SmithingMatch(template, base, addition);
+    }
+
+    /**
+     * 获取玩家背包和当前打开容器的可变快照。
+     *
+     * <p>快照顺序固定为玩家背包优先、当前容器其次，用来保持“优先使用背包材料”的行为。</p>
+     *
+     * @return 可用材料的非空物品堆副本列表
+     */
+    private List<ItemStack> getInventorySnapshot() {
+        List<ItemStack> available = new ArrayList<>();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return available;
+
+        for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            if (!stack.isEmpty()) {
+                // 使用副本参与匹配，避免客户端预览阶段直接修改玩家背包。
+                available.add(stack.copy());
+            }
+        }
+
+        if (mc.player.containerMenu != mc.player.inventoryMenu) {
+            for (var slot : mc.player.containerMenu.slots) {
+                ItemStack stack = slot.getItem();
+                if (slot.container != mc.player.getInventory() && !stack.isEmpty() && !slot.isFake() && slot.mayPickup(mc.player) && slot.mayPlace(stack)) {
+                    available.add(stack.copy());
+                }
+            }
+        }
+
+        return available;
+    }
+
+    /**
+     * 从可变背包快照中取出第一个满足条件的物品。
+     *
+     * @param available 可变背包快照
+     * @param matcher 材料匹配规则
+     * @return 匹配到的单个物品副本；未匹配时返回 {@link ItemStack#EMPTY}
+     */
+    private ItemStack takeFirstMatching(List<ItemStack> available, Predicate<ItemStack> matcher) {
+        for (ItemStack stack : available) {
+            if (!stack.isEmpty() && matcher.test(stack)) {
+                // 命中一个材料槽后扣减 1 个副本数量，防止同一个物品被多个材料槽重复占用。
+                ItemStack matched = stack.copyWithCount(1);
+                stack.shrink(1);
+                return matched;
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    /**
+     * 从注册表中找一个可以代表材料槽的展示物品。
+     *
+     * @param matcher 材料匹配规则
+     * @return 第一个匹配的物品堆；没有匹配项时返回 {@link ItemStack#EMPTY}
+     */
+    private ItemStack findFirstRegisteredItem(Predicate<ItemStack> matcher) {
+        for (var item : BuiltInRegistries.ITEM) {
+            ItemStack stack = new ItemStack(item);
+            if (matcher.test(stack)) {
+                return stack;
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    /**
+     * 锻造台三槽输入的实际匹配结果。
+     *
+     * @param template 模板槽物品
+     * @param base 基础槽物品
+     * @param addition 追加材料槽物品
+     */
+    private record SmithingMatch(ItemStack template, ItemStack base, ItemStack addition) {
     }
 
     /**
@@ -335,7 +498,7 @@ public class CraftHelperScreen extends Screen {
         // 可合成数量统计
         int craftableCount = 0;
         Minecraft mc = Minecraft.getInstance();
-        for (RecipeHolder<CraftingRecipe> holder : sortedRecipes) {
+        for (RecipeHolder<?> holder : sortedRecipes) {
             if (canCraftRecipe(holder.value())) craftableCount++;
         }
         String summary = "可合成: " + craftableCount + "/" + sortedRecipes.size();
@@ -360,9 +523,9 @@ public class CraftHelperScreen extends Screen {
         }
 
         for (int i = startIndex; i < endIndex; i++) {
-            RecipeHolder<CraftingRecipe> holder = sortedRecipes.get(i);
-            CraftingRecipe recipe = holder.value();
-            ItemStack result = recipe.getResultItem(mc.level.registryAccess());
+            RecipeHolder<?> holder = sortedRecipes.get(i);
+            Recipe<?> recipe = holder.value();
+            ItemStack result = getRecipeResult(recipe);
 
             int recipeY = getRecipeY(i - startIndex);
             boolean canCraft = canCraftRecipe(recipe);
@@ -524,14 +687,10 @@ public class CraftHelperScreen extends Screen {
         searchFocused = false;
 
         int totalPages = getTotalPages();
-        if (totalPages > 1 && currentPage > 0 && isInside(mouseX, mouseY, panelX + 16, panelY + PANEL_HEIGHT - 34, 34, 20)) {
-            currentPage--;
-            refreshButtons();
+        if (totalPages > 1 && isInside(mouseX, mouseY, panelX + 16, panelY + PANEL_HEIGHT - 34, 34, 20) && turnPage(-1)) {
             return true;
         }
-        if (totalPages > 1 && currentPage + 1 < totalPages && isInside(mouseX, mouseY, panelX + PANEL_WIDTH - 50, panelY + PANEL_HEIGHT - 34, 34, 20)) {
-            currentPage++;
-            refreshButtons();
+        if (totalPages > 1 && isInside(mouseX, mouseY, panelX + PANEL_WIDTH - 50, panelY + PANEL_HEIGHT - 34, 34, 20) && turnPage(1)) {
             return true;
         }
         if (isInside(mouseX, mouseY, panelX + PANEL_WIDTH / 2 - 12, panelY + PANEL_HEIGHT - 30, 24, 18)) {
@@ -549,8 +708,8 @@ public class CraftHelperScreen extends Screen {
         int startIndex = currentPage * RECIPE_PER_PAGE;
         int endIndex = Math.min(startIndex + RECIPE_PER_PAGE, sortedRecipes.size());
         for (int i = startIndex; i < endIndex; i++) {
-            RecipeHolder<CraftingRecipe> holder = sortedRecipes.get(i);
-            CraftingRecipe recipe = holder.value();
+            RecipeHolder<?> holder = sortedRecipes.get(i);
+            Recipe<?> recipe = holder.value();
             int recipeY = getRecipeY(i - startIndex);
 
             if (isInside(mouseX, mouseY, panelX + CRAFT_BUTTON_X_OFFSET, recipeY + 6, 22, 20) && canCraftRecipe(recipe)) {
@@ -563,6 +722,49 @@ public class CraftHelperScreen extends Screen {
         }
 
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    /**
+     * 处理鼠标滚轮翻页。
+     *
+     * @param mouseX 鼠标 X 坐标
+     * @param mouseY 鼠标 Y 坐标
+     * @param scrollX 横向滚动量
+     * @param scrollY 纵向滚动量
+     * @return 成功翻页时返回 {@code true}
+     */
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (scrollY > 0.0D && turnPage(-1)) {
+            return true;
+        }
+        if (scrollY < 0.0D && turnPage(1)) {
+            return true;
+        }
+
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    /**
+     * 按方向翻页。
+     *
+     * @param direction 翻页方向，负数上一页，正数下一页
+     * @return 页码发生变化时返回 {@code true}
+     */
+    private boolean turnPage(int direction) {
+        int totalPages = getTotalPages();
+        if (totalPages <= 1) {
+            return false;
+        }
+
+        int nextPage = Math.max(0, Math.min(currentPage + Integer.signum(direction), totalPages - 1));
+        if (nextPage == currentPage) {
+            return false;
+        }
+
+        currentPage = nextPage;
+        refreshButtons();
+        return true;
     }
 
     /**
@@ -600,17 +802,14 @@ public class CraftHelperScreen extends Screen {
     }
 
     /**
-     * 判断玩家背包中是否有足够数量的指定材料。
+     * 判断玩家背包或当前打开容器中是否有足够数量的指定材料。
      *
      * @param needed 需要展示或检查的材料
-     * @return 背包中同物品同组件的数量足够时返回 {@code true}
+     * @return 可用来源中同物品同组件的数量足够时返回 {@code true}
      */
     private boolean hasItemInInventory(ItemStack needed) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) return false;
         int needCount = needed.getCount();
-        for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
-            ItemStack stack = mc.player.getInventory().getItem(i);
+        for (ItemStack stack : getInventorySnapshot()) {
             if (!stack.isEmpty() && ItemStack.isSameItemSameComponents(stack, needed)) {
                 needCount -= stack.getCount();
                 if (needCount <= 0) return true;
@@ -627,6 +826,19 @@ public class CraftHelperScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    /**
+     * 关闭合成助手，并同步关闭打开它时保留的容器菜单。
+     */
+    @Override
+    public void onClose() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null && mc.player.containerMenu != mc.player.inventoryMenu) {
+            mc.player.closeContainer();
+        }
+
+        super.onClose();
     }
 
     /**

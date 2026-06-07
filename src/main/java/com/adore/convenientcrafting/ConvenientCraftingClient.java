@@ -3,6 +3,7 @@ package com.adore.convenientcrafting;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
@@ -87,6 +88,26 @@ public class ConvenientCraftingClient {
             Minecraft mc = Minecraft.getInstance();
             if (mc.player != null && mc.level != null) {
                 mc.setScreen(new CraftHelperScreen());
+            }
+        }
+    }
+
+    /**
+     * 在箱子等容器界面中监听快捷键并打开合成助手。
+     *
+     * @param event 界面按键事件
+     */
+    @SubscribeEvent
+    static void onScreenKeyPressed(ScreenEvent.KeyPressed.Pre event) {
+        if (!(event.getScreen() instanceof AbstractContainerScreen<?>)) {
+            return;
+        }
+
+        if (OPEN_CRAFT_HELPER_KEY.get().matches(event.getKeyCode(), event.getScanCode())) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null && mc.level != null) {
+                mc.setScreen(new CraftHelperScreen());
+                event.setCanceled(true);
             }
         }
     }
