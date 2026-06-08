@@ -3,11 +3,18 @@ package com.adore.convenientcrafting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.FormattedText;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.Potion;
+import net.minecraft.world.item.alchemy.PotionBrewing;
+import net.minecraft.world.item.alchemy.PotionContents;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
@@ -99,7 +106,7 @@ public class CraftHelperScreen extends Screen {
         if (mc.level == null) return;
 
         Set<String> seenDuplicateRecipes = new HashSet<>();
-        Map<String, List<RecipeHolder<?>>> groupedRecipes = new LinkedHashMap<>();
+        Map<String, List<RecipeEntry>> groupedRecipes = new LinkedHashMap<>();
         var recipeManager = mc.level.getRecipeManager();
 
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
@@ -109,11 +116,61 @@ public class CraftHelperScreen extends Screen {
                 if (!seenDuplicateRecipes.add(duplicateKey)) continue;
 
                 ItemStack result = getRecipeResult(recipe);
-                groupedRecipes.computeIfAbsent(buildResultGroupKey(result), ignored -> new ArrayList<>()).add(holder);
+                groupedRecipes.computeIfAbsent(buildResultGroupKey(result), ignored -> new ArrayList<>())
+                        .add(RecipeEntry.fromRecipe(holder));
             }
         }
 
+        addBrewingRecipes(groupedRecipes, seenDuplicateRecipes);
+
         groupedRecipes.forEach((key, recipes) -> allRecipeGroups.add(new RecipeGroup(key, recipes)));
+    }
+
+    private void addBrewingRecipes(Map<String, List<RecipeEntry>> groupedRecipes, Set<String> seenDuplicateRecipes) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null
+                || !RecipeSupport.isBuiltInRecipeTypeEnabled(mc.player, BrewingRecipeSupport.RECIPE_TYPE_ID)
+                || !ClientRecipeUnlocks.isUnlocked(BrewingRecipeSupport.RECIPE_TYPE_ID)) {
+            return;
+        }
+
+        PotionBrewing potionBrewing = mc.level.potionBrewing();
+        List<Item> containers = List.of(Items.POTION, Items.SPLASH_POTION, Items.LINGERING_POTION);
+        List<ItemStack> ingredients = BuiltInRegistries.ITEM.stream()
+                .map(ItemStack::new)
+                .filter(potionBrewing::isIngredient)
+                .toList();
+        List<Holder.Reference<Potion>> potions = mc.level.registryAccess()
+                .registryOrThrow(Registries.POTION)
+                .holders()
+                .filter(potionBrewing::isBrewablePotion)
+                .toList();
+
+        for (Item container : containers) {
+            for (Holder.Reference<Potion> potion : potions) {
+                ItemStack input = PotionContents.createItemStack(container, potion);
+                for (ItemStack ingredient : ingredients) {
+                    if (!potionBrewing.hasMix(input, ingredient)) {
+                        continue;
+                    }
+
+                    ItemStack result = potionBrewing.mix(ingredient, input);
+                    ResourceLocation id = BrewingRecipeSupport.buildRecipeId(input, ingredient);
+                    if (id == null || result.isEmpty() || ItemStack.isSameItemSameComponents(input, result)) {
+                        continue;
+                    }
+
+                    String duplicateKey = "brewing:" + id;
+                    if (!seenDuplicateRecipes.add(duplicateKey)) {
+                        continue;
+                    }
+
+                    BrewingRecipeEntry entry = new BrewingRecipeEntry(id, input.copy(), ingredient.copyWithCount(1), result.copy());
+                    groupedRecipes.computeIfAbsent(buildResultGroupKey(result), ignored -> new ArrayList<>())
+                            .add(RecipeEntry.fromBrewing(entry));
+                }
+            }
+        }
     }
 
     /**
@@ -161,8 +218,8 @@ public class CraftHelperScreen extends Screen {
         // 预先计算每个配方当前是否能合成
         Map<ResourceLocation, Boolean> craftableCache = new HashMap<>();
         for (RecipeGroup group : allRecipeGroups) {
-            for (RecipeHolder<?> holder : group.recipes()) {
-                craftableCache.put(holder.id(), canCraftRecipe(holder.value()));
+            for (RecipeEntry entry : group.recipes()) {
+                craftableCache.put(entry.id(), canCraftEntry(entry));
             }
         }
 
@@ -172,8 +229,8 @@ public class CraftHelperScreen extends Screen {
                     Minecraft mc = Minecraft.getInstance();
                     if (mc.level == null) return 0;
 
-                    ItemStack resultA = getRecipeResult(getFirstRecipe(a).value());
-                    ItemStack resultB = getRecipeResult(getFirstRecipe(b).value());
+                    ItemStack resultA = getEntryResult(getFirstRecipe(a));
+                    ItemStack resultB = getEntryResult(getFirstRecipe(b));
 
                     boolean canCraftA = canCraftAnyRecipe(a, craftableCache);
                     boolean canCraftB = canCraftAnyRecipe(b, craftableCache);
@@ -225,7 +282,7 @@ public class CraftHelperScreen extends Screen {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return false;
 
-        ItemStack result = getRecipeResult(getFirstRecipe(group).value());
+        ItemStack result = getEntryResult(getFirstRecipe(group));
         String itemName = result.getHoverName().getString().toLowerCase(Locale.ROOT);
         ResourceLocation itemKey = BuiltInRegistries.ITEM.getKey(result.getItem());
         String itemId = itemKey != null ? itemKey.toString().toLowerCase(Locale.ROOT) : "";
@@ -233,8 +290,8 @@ public class CraftHelperScreen extends Screen {
     }
 
     private boolean canCraftAnyRecipe(RecipeGroup group) {
-        for (RecipeHolder<?> holder : group.recipes()) {
-            if (canCraftRecipe(holder.value())) {
+        for (RecipeEntry entry : group.recipes()) {
+            if (canCraftEntry(entry)) {
                 return true;
             }
         }
@@ -242,19 +299,19 @@ public class CraftHelperScreen extends Screen {
     }
 
     private boolean canCraftAnyRecipe(RecipeGroup group, Map<ResourceLocation, Boolean> craftableCache) {
-        for (RecipeHolder<?> holder : group.recipes()) {
-            if (craftableCache.getOrDefault(holder.id(), false)) {
+        for (RecipeEntry entry : group.recipes()) {
+            if (craftableCache.getOrDefault(entry.id(), false)) {
                 return true;
             }
         }
         return false;
     }
 
-    private RecipeHolder<?> getFirstRecipe(RecipeGroup group) {
+    private RecipeEntry getFirstRecipe(RecipeGroup group) {
         return group.recipes().isEmpty() ? null : group.recipes().get(0);
     }
 
-    private RecipeHolder<?> getActiveRecipe(RecipeGroup group) {
+    private RecipeEntry getActiveRecipe(RecipeGroup group) {
         if (group.recipes().isEmpty()) {
             return null;
         }
@@ -269,6 +326,14 @@ public class CraftHelperScreen extends Screen {
      */
     private void refreshButtons() {
         clearWidgets();
+    }
+
+    private boolean canCraftEntry(RecipeEntry entry) {
+        if (entry == null) return false;
+        if (entry.isBrewing()) {
+            return findBrewingMatch(entry.brewing()) != null;
+        }
+        return canCraftRecipe(entry.recipe());
     }
 
     /**
@@ -299,6 +364,19 @@ public class CraftHelperScreen extends Screen {
         return isConfiguredSimpleRecipeCraftable(recipe);
     }
 
+    private ItemStack getEntryResult(RecipeEntry entry) {
+        if (entry == null) return ItemStack.EMPTY;
+        if (entry.isBrewing()) {
+            ItemStack result = entry.brewing().result().copy();
+            BrewingMatch match = findBrewingMatch(entry.brewing());
+            if (match != null) {
+                result.setCount(match.inputs().size());
+            }
+            return result;
+        }
+        return getRecipeResult(entry.recipe());
+    }
+
     /**
      * 判断当前玩家背包是否满足一组合成材料。
      *
@@ -324,6 +402,29 @@ public class CraftHelperScreen extends Screen {
      * @param recipe 要展示的合成配方
      * @return 每个材料槽的第一个可匹配物品堆
      */
+    private DisplayIngredient[] getIngredientStacks(RecipeEntry entry) {
+        if (entry.isBrewing()) {
+            BrewingRecipeEntry brewing = entry.brewing();
+            BrewingMatch match = findBrewingMatch(brewing);
+            if (match != null) {
+                DisplayIngredient[] ingredients = new DisplayIngredient[match.inputs().size() + 1];
+                for (int i = 0; i < match.inputs().size(); i++) {
+                    ingredients[i] = new DisplayIngredient(match.inputs().get(i), true);
+                }
+                ingredients[ingredients.length - 1] = new DisplayIngredient(match.ingredient(), true);
+                return ingredients;
+            }
+
+            List<ItemStack> available = getInventorySnapshot();
+            return new DisplayIngredient[] {
+                    getDisplayIngredient(available, stack -> ItemStack.isSameItemSameComponents(stack, brewing.input()), brewing.input()),
+                    getDisplayIngredient(available, stack -> stack.is(brewing.ingredient().getItem()), brewing.ingredient())
+            };
+        }
+
+        return getIngredientStacks(entry.recipe());
+    }
+
     private DisplayIngredient[] getIngredientStacks(Recipe<?> recipe) {
         if (recipe instanceof SmithingRecipe smithingRecipe) {
             SmithingMatch match = findSmithingMatch(smithingRecipe);
@@ -380,10 +481,17 @@ public class CraftHelperScreen extends Screen {
 
     private int getMaxIngredientCount(RecipeGroup group) {
         int maxCount = 0;
-        for (RecipeHolder<?> holder : group.recipes()) {
-            maxCount = Math.max(maxCount, getIngredientCount(holder.value()));
+        for (RecipeEntry entry : group.recipes()) {
+            maxCount = Math.max(maxCount, getIngredientCount(entry));
         }
         return maxCount;
+    }
+
+    private int getIngredientCount(RecipeEntry entry) {
+        if (entry.isBrewing()) {
+            return 4;
+        }
+        return getIngredientCount(entry.recipe());
     }
 
     private int getIngredientCount(Recipe<?> recipe) {
@@ -481,6 +589,35 @@ public class CraftHelperScreen extends Screen {
      *
      * @return 可用材料的非空物品堆副本列表
      */
+    private BrewingMatch findBrewingMatch(BrewingRecipeEntry recipe) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return null;
+
+        List<ItemStack> available = getInventorySnapshot();
+        ItemStack ingredient = takeFirstMatching(available, stack -> stack.is(recipe.ingredient().getItem()));
+        if (ingredient.isEmpty()) return null;
+
+        PotionBrewing potionBrewing = mc.level.potionBrewing();
+        List<ItemStack> inputs = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            ItemStack input = takeFirstMatching(available, stack -> ItemStack.isSameItemSameComponents(stack, recipe.input()));
+            if (input.isEmpty()) {
+                break;
+            }
+
+            if (!potionBrewing.hasMix(input, ingredient)) {
+                continue;
+            }
+
+            ItemStack result = potionBrewing.mix(ingredient, input);
+            if (!result.isEmpty() && ItemStack.isSameItemSameComponents(result, recipe.result())) {
+                inputs.add(input);
+            }
+        }
+
+        return inputs.isEmpty() ? null : new BrewingMatch(inputs, ingredient);
+    }
+
     private List<ItemStack> getInventorySnapshot() {
         List<ItemStack> available = new ArrayList<>();
         Minecraft mc = Minecraft.getInstance();
@@ -551,6 +688,26 @@ public class CraftHelperScreen extends Screen {
     private record SmithingMatch(ItemStack template, ItemStack base, ItemStack addition) {
     }
 
+    private record BrewingMatch(List<ItemStack> inputs, ItemStack ingredient) {
+    }
+
+    private record BrewingRecipeEntry(ResourceLocation id, ItemStack input, ItemStack ingredient, ItemStack result) {
+    }
+
+    private record RecipeEntry(ResourceLocation id, Recipe<?> recipe, BrewingRecipeEntry brewing) {
+        private static RecipeEntry fromRecipe(RecipeHolder<?> holder) {
+            return new RecipeEntry(holder.id(), holder.value(), null);
+        }
+
+        private static RecipeEntry fromBrewing(BrewingRecipeEntry brewing) {
+            return new RecipeEntry(brewing.id(), null, brewing);
+        }
+
+        private boolean isBrewing() {
+            return brewing != null;
+        }
+    }
+
     /**
      * 材料栏中单个槽位的展示物品，以及该槽位是否已经从可用材料快照中成功匹配。
      *
@@ -566,7 +723,7 @@ public class CraftHelperScreen extends Screen {
      * @param resultKey 产物分组键
      * @param recipes 该产物对应的可展示配方列表
      */
-    private record RecipeGroup(String resultKey, List<RecipeHolder<?>> recipes) {
+    private record RecipeGroup(String resultKey, List<RecipeEntry> recipes) {
     }
 
     /**
@@ -618,12 +775,11 @@ public class CraftHelperScreen extends Screen {
 
         for (int i = startIndex; i < endIndex; i++) {
             RecipeGroup group = sortedRecipeGroups.get(i);
-            RecipeHolder<?> holder = getActiveRecipe(group);
-            Recipe<?> recipe = holder.value();
-            ItemStack result = getRecipeResult(recipe);
+            RecipeEntry entry = getActiveRecipe(group);
+            ItemStack result = getEntryResult(entry);
 
             int recipeY = getRecipeY(i - startIndex);
-            boolean canCraft = canCraftRecipe(recipe);
+            boolean canCraft = canCraftEntry(entry);
 
             // 产物图标
             guiGraphics.renderItem(result, panelX + RESULT_X_OFFSET, recipeY + 4);
@@ -639,7 +795,7 @@ public class CraftHelperScreen extends Screen {
             guiGraphics.drawString(font, "x" + result.getCount(), panelX + NAME_X_OFFSET, recipeY + 16, 0xAAAAAA, false);
 
             // 材料图标（最多显示 4 种）
-            DisplayIngredient[] ingredients = getIngredientStacks(recipe);
+            DisplayIngredient[] ingredients = getIngredientStacks(entry);
             int ingX = panelX + INGREDIENT_X_OFFSET;
             int ingredientWidth = MAX_VISIBLE_INGREDIENTS * INGREDIENT_ICON_SIZE;
             int ingredientOffset = getIngredientScrollOffset(ingredients.length, getMaxIngredientCount(group), mouseX, mouseY, ingX, recipeY);
@@ -810,12 +966,11 @@ public class CraftHelperScreen extends Screen {
         int endIndex = Math.min(startIndex + RECIPE_PER_PAGE, sortedRecipeGroups.size());
         for (int i = startIndex; i < endIndex; i++) {
             RecipeGroup group = sortedRecipeGroups.get(i);
-            RecipeHolder<?> holder = getActiveRecipe(group);
-            Recipe<?> recipe = holder.value();
+            RecipeEntry entry = getActiveRecipe(group);
             int recipeY = getRecipeY(i - startIndex);
 
-            if (isInside(mouseX, mouseY, panelX + CRAFT_BUTTON_X_OFFSET, recipeY + 6, 22, 20) && canCraftRecipe(recipe)) {
-                PacketDistributor.sendToServer(new CraftRecipePacket(holder.id()));
+            if (isInside(mouseX, mouseY, panelX + CRAFT_BUTTON_X_OFFSET, recipeY + 6, 22, 20) && canCraftEntry(entry)) {
+                PacketDistributor.sendToServer(new CraftRecipePacket(entry.id()));
                 refreshInventoryCache();
                 sortRecipes();
                 refreshButtons();

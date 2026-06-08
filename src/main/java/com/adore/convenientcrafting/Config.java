@@ -46,6 +46,22 @@ public class Config {
             .defineListAllowEmpty("items", List.of("minecraft:iron_ingot"), () -> "", Config::validateItemName);
 
     /**
+     * 内置支持的一键合成工作台配方类型。
+     */
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> ENABLED_BUILTIN_RECIPE_TYPES = BUILDER
+            .comment(
+                    "Built-in vanilla workstation recipe type ids enabled for Convenient Crafting.",
+                    "Remove an id from this list to disable that workstation type.",
+                    "Supported built-in ids: minecraft:crafting, minecraft:smithing, minecraft:brewing"
+            )
+            .defineListAllowEmpty(
+                    "enabledBuiltinRecipeTypes",
+                    List.of("minecraft:crafting", "minecraft:smithing", "minecraft:brewing"),
+                    () -> "",
+                    Config::validateBuiltinRecipeType
+            );
+
+    /**
      * 额外启用的一键合成配方类型。
      *
      * <p>默认只内置支持工作台和锻造台。这里的额外类型会按“普通材料列表 + 固定产物”处理，
@@ -98,6 +114,17 @@ public class Config {
      */
     private static boolean validateResourceLocation(final Object obj) {
         return obj instanceof String location && ResourceLocation.tryParse(location) != null;
+    }
+
+    private static boolean validateBuiltinRecipeType(final Object obj) {
+        if (!(obj instanceof String location)) {
+            return false;
+        }
+
+        return switch (location.trim()) {
+            case "minecraft:crafting", "minecraft:smithing", "minecraft:brewing" -> true;
+            default -> false;
+        };
     }
 
     /**

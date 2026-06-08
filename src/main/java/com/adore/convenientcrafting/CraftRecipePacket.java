@@ -13,6 +13,7 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.SmithingRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipeInput;
+import net.minecraft.world.item.alchemy.PotionBrewing;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.*;
@@ -79,23 +80,31 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
         var server = player.getServer();
         if (server == null) return;
 
+        if (BrewingRecipeSupport.isBrewingRecipeId(recipeId)) {
+            finishCrafting(player, buildBrewingCraftingResult(player, recipeId));
+            return;
+        }
+
         var optional = server.getRecipeManager().byKey(recipeId);
         if (optional.isEmpty()) return;
 
         Recipe<?> recipe = optional.get().value();
-        CraftingResult craftingResult = buildCraftingResult(player, recipe);
-        if (craftingResult == null || craftingResult.result().isEmpty()) return;
+        finishCrafting(player, buildCraftingResult(player, recipe));
+    }
 
-        ItemStack result = craftingResult.result();
+    private static void finishCrafting(ServerPlayer player, CraftingResult craftingResult) {
+        if (craftingResult == null || craftingResult.results().isEmpty()) return;
 
         // Check if there's enough space in inventory for the result
-        if (!hasSpaceForResult(player.getInventory(), result, craftingResult.ingredients())) return;
+        if (!hasSpaceForResults(player.getInventory(), craftingResult.results(), craftingResult.ingredients())) return;
 
         // Consume ingredients
         if (!consumeIngredients(player, craftingResult.ingredients())) return;
 
         // Give result
-        player.getInventory().add(result.copy());
+        for (ItemStack result : craftingResult.results()) {
+            player.getInventory().add(result.copy());
+        }
 
         // Broadcast changes
         player.containerMenu.broadcastChanges();
@@ -118,7 +127,7 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
             List<Ingredient> ingredients = RecipeSupport.getNonEmptyIngredients(craftingRecipe);
             List<IngredientUse> matchedIngredients = matchIngredients(player, ingredients);
             if (matchedIngredients.isEmpty()) return null;
-            return result.isEmpty() ? null : new CraftingResult(result, matchedIngredients);
+            return result.isEmpty() ? null : CraftingResult.single(result, matchedIngredients);
         }
 
         if (recipe instanceof SmithingRecipe smithingRecipe) {
@@ -131,7 +140,7 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
             ItemStack result = smithingRecipe.assemble(input, server.registryAccess());
             if (result.isEmpty()) return null;
 
-            return new CraftingResult(result, List.of(
+            return CraftingResult.single(result, List.of(
                     match.template(),
                     match.base(),
                     match.addition()
@@ -142,7 +151,7 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
             ItemStack result = recipe.getResultItem(server.registryAccess()).copy();
             List<IngredientUse> matchedIngredients = matchIngredients(player, RecipeSupport.getNonEmptyIngredients(recipe));
             if (matchedIngredients.isEmpty()) return null;
-            return result.isEmpty() ? null : new CraftingResult(result, matchedIngredients);
+            return result.isEmpty() ? null : CraftingResult.single(result, matchedIngredients);
         }
 
         return null;
@@ -158,6 +167,53 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
      * @param ingredients 配方材料列表
      * @return 实际匹配到的材料；无法全部匹配时返回空列表
      */
+    private static CraftingResult buildBrewingCraftingResult(ServerPlayer player, ResourceLocation recipeId) {
+        if (!RecipeUnlocks.isBuiltinRecipeTypeEnabled(BrewingRecipeSupport.RECIPE_TYPE_ID)) return null;
+        if (!RecipeUnlocks.isUnlocked(player, BrewingRecipeSupport.RECIPE_TYPE_ID)) return null;
+
+        Optional<BrewingRecipeSupport.BrewingRecipeKey> optionalKey = BrewingRecipeSupport.parseRecipeId(recipeId);
+        if (optionalKey.isEmpty()) return null;
+
+        BrewingRecipeSupport.BrewingRecipeKey key = optionalKey.get();
+        ItemStack expectedInput = BrewingRecipeSupport.createPotionStack(player.registryAccess(), key.containerId(), key.potionId());
+        ItemStack expectedIngredient = BrewingRecipeSupport.createIngredientStack(key.ingredientId());
+        if (expectedInput.isEmpty() || expectedIngredient.isEmpty()) return null;
+
+        PotionBrewing potionBrewing = player.level().potionBrewing();
+        ItemStack expectedResult = potionBrewing.mix(expectedIngredient, expectedInput);
+        if (expectedResult.isEmpty()) return null;
+
+        List<AvailableMaterial> available = getAvailableMaterials(player);
+        IngredientUse ingredient = takeFirstMatching(available, stack -> stack.is(expectedIngredient.getItem()));
+        if (ingredient == null) return null;
+
+        List<IngredientUse> inputs = new ArrayList<>();
+        List<ItemStack> results = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            IngredientUse input = takeFirstMatching(available, stack -> ItemStack.isSameItemSameComponents(stack, expectedInput));
+            if (input == null) {
+                break;
+            }
+
+            if (!potionBrewing.hasMix(input.stack(), ingredient.stack())) {
+                continue;
+            }
+
+            ItemStack result = potionBrewing.mix(ingredient.stack(), input.stack());
+            if (!result.isEmpty() && ItemStack.isSameItemSameComponents(result, expectedResult)) {
+                inputs.add(input);
+                results.add(result.copyWithCount(1));
+            }
+        }
+
+        if (inputs.isEmpty()) return null;
+
+        List<IngredientUse> consumed = new ArrayList<>();
+        consumed.add(ingredient);
+        consumed.addAll(inputs);
+        return new CraftingResult(results, consumed);
+    }
+
     private static List<IngredientUse> matchIngredients(ServerPlayer player, List<Ingredient> ingredients) {
         if (ingredients.isEmpty()) return List.of();
 
@@ -182,7 +238,7 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
      * @param consumedIngredients 将要消耗的材料
      * @return 现有堆叠或空槽足够容纳产物时返回 {@code true}
      */
-    private static boolean hasSpaceForResult(Inventory inventory, ItemStack result, List<IngredientUse> consumedIngredients) {
+    private static boolean hasSpaceForResults(Inventory inventory, List<ItemStack> results, List<IngredientUse> consumedIngredients) {
         List<ItemStack> simulatedInventory = new ArrayList<>();
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             simulatedInventory.add(inventory.getItem(i).copy());
@@ -195,6 +251,16 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
             }
         }
 
+        for (ItemStack result : results) {
+            if (result.isEmpty() || !simulateAddResult(simulatedInventory, result)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static boolean simulateAddResult(List<ItemStack> simulatedInventory, ItemStack result) {
         int remaining = result.getCount();
         int maxStack = result.getMaxStackSize();
 
@@ -203,16 +269,20 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
             if (!stack.isEmpty() && ItemStack.isSameItemSameComponents(stack, result)) {
                 int space = maxStack - stack.getCount();
                 if (space > 0) {
-                    remaining -= Math.min(remaining, space);
+                    int moved = Math.min(remaining, space);
+                    stack.grow(moved);
+                    remaining -= moved;
                     if (remaining <= 0) return true;
                 }
             }
         }
 
         // 现有堆叠不够时，再把空槽按完整最大堆叠容量计入。
-        for (ItemStack stack : simulatedInventory) {
-            if (stack.isEmpty()) {
-                remaining -= maxStack;
+        for (int i = 0; i < simulatedInventory.size(); i++) {
+            if (simulatedInventory.get(i).isEmpty()) {
+                int moved = Math.min(remaining, maxStack);
+                simulatedInventory.set(i, result.copyWithCount(moved));
+                remaining -= moved;
                 if (remaining <= 0) return true;
             }
         }
@@ -352,7 +422,10 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
      * @param result 合成产物
      * @param ingredients 需要扣除的材料
      */
-    private record CraftingResult(ItemStack result, List<IngredientUse> ingredients) {
+    private record CraftingResult(List<ItemStack> results, List<IngredientUse> ingredients) {
+        private static CraftingResult single(ItemStack result, List<IngredientUse> ingredients) {
+            return new CraftingResult(List.of(result), ingredients);
+        }
     }
 
     /**

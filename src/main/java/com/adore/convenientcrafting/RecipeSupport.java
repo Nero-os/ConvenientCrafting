@@ -35,6 +35,29 @@ public final class RecipeSupport {
         return recipe instanceof CraftingRecipe || recipe instanceof SmithingRecipe;
     }
 
+    public static boolean isBuiltInRecipeType(ResourceLocation typeId) {
+        if (typeId == null) {
+            return false;
+        }
+
+        String normalized = typeId.toString().toLowerCase(Locale.ROOT);
+        return normalized.equals("minecraft:crafting")
+                || normalized.equals("minecraft:smithing")
+                || normalized.equals("minecraft:brewing");
+    }
+
+    public static boolean isBuiltInRecipeTypeEnabled(Player player, ResourceLocation typeId) {
+        if (!isBuiltInRecipeType(typeId)) {
+            return false;
+        }
+
+        if (player instanceof ServerPlayer) {
+            return RecipeUnlocks.isBuiltinRecipeTypeEnabled(typeId);
+        }
+
+        return ClientRecipeUnlocks.isBuiltinRecipeTypeEnabled(typeId);
+    }
+
     /**
      * 判断配方是否属于配置额外启用的简单配方类型。
      *
@@ -77,6 +100,9 @@ public final class RecipeSupport {
     public static boolean isUnlockedFor(Player player, Recipe<?> recipe) {
         ResourceLocation typeId = getRecipeTypeId(recipe);
         if (typeId == null) {
+            return false;
+        }
+        if (isBuiltInRecipeType(typeId) && !isBuiltInRecipeTypeEnabled(player, typeId)) {
             return false;
         }
         if (player instanceof ServerPlayer) {

@@ -16,7 +16,11 @@ import java.util.List;
  * @param unlockedRecipeTypeIds 已解锁配方类型 ID 列表
  * @param enabledAdditionalRecipeTypeIds 服务端额外启用的配方类型 ID 列表
  */
-public record RecipeUnlockSyncPacket(List<String> unlockedRecipeTypeIds, List<String> enabledAdditionalRecipeTypeIds) implements CustomPacketPayload {
+public record RecipeUnlockSyncPacket(
+        List<String> unlockedRecipeTypeIds,
+        List<String> enabledBuiltinRecipeTypeIds,
+        List<String> enabledAdditionalRecipeTypeIds
+) implements CustomPacketPayload {
     /**
      * 数据包类型标识。
      */
@@ -31,6 +35,8 @@ public record RecipeUnlockSyncPacket(List<String> unlockedRecipeTypeIds, List<St
             StreamCodec.composite(
                     ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8, 256),
                     RecipeUnlockSyncPacket::unlockedRecipeTypeIds,
+                    ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8, 256),
+                    RecipeUnlockSyncPacket::enabledBuiltinRecipeTypeIds,
                     ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8, 256),
                     RecipeUnlockSyncPacket::enabledAdditionalRecipeTypeIds,
                     RecipeUnlockSyncPacket::new
@@ -50,6 +56,7 @@ public record RecipeUnlockSyncPacket(List<String> unlockedRecipeTypeIds, List<St
     public static void handleClient(RecipeUnlockSyncPacket message, IPayloadContext context) {
         context.enqueueWork(() -> {
             ClientRecipeUnlocks.setUnlockedRecipeTypes(message.unlockedRecipeTypeIds());
+            ClientRecipeUnlocks.setEnabledBuiltinRecipeTypes(message.enabledBuiltinRecipeTypeIds());
             ClientRecipeUnlocks.setEnabledAdditionalRecipeTypes(message.enabledAdditionalRecipeTypeIds());
         });
     }

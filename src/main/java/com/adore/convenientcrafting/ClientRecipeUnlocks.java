@@ -12,6 +12,7 @@ import java.util.Set;
  */
 public final class ClientRecipeUnlocks {
     private static final Set<String> UNLOCKED_RECIPE_TYPES = new HashSet<>();
+    private static final Set<String> ENABLED_BUILTIN_RECIPE_TYPES = new HashSet<>();
     private static final Set<String> ENABLED_ADDITIONAL_RECIPE_TYPES = new HashSet<>();
 
     private ClientRecipeUnlocks() {
@@ -27,6 +28,13 @@ public final class ClientRecipeUnlocks {
         recipeTypeIds.stream()
                 .map(value -> value.toLowerCase(Locale.ROOT))
                 .forEach(UNLOCKED_RECIPE_TYPES::add);
+    }
+
+    public static void setEnabledBuiltinRecipeTypes(Collection<String> recipeTypeIds) {
+        ENABLED_BUILTIN_RECIPE_TYPES.clear();
+        recipeTypeIds.stream()
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .forEach(ENABLED_BUILTIN_RECIPE_TYPES::add);
     }
 
     /**
@@ -49,6 +57,10 @@ public final class ClientRecipeUnlocks {
      */
     public static boolean isUnlocked(ResourceLocation recipeTypeId) {
         return UNLOCKED_RECIPE_TYPES.contains(recipeTypeId.toString().toLowerCase(Locale.ROOT));
+    }
+
+    public static boolean isBuiltinRecipeTypeEnabled(ResourceLocation recipeTypeId) {
+        return ENABLED_BUILTIN_RECIPE_TYPES.contains(recipeTypeId.toString().toLowerCase(Locale.ROOT));
     }
 
     /**

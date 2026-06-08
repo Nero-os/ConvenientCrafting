@@ -135,8 +135,9 @@ public final class RecipeUnlocks {
      */
     private static Map<ResourceLocation, List<ResourceLocation>> getUnlockRules() {
         Map<ResourceLocation, List<ResourceLocation>> rules = new HashMap<>();
-        putRule(rules, "minecraft:crafting", List.of("minecraft:crafting_table"));
-        putRule(rules, "minecraft:smithing", List.of("minecraft:smithing_table"));
+        putBuiltinRule(rules, "minecraft:crafting", List.of("minecraft:crafting_table"));
+        putBuiltinRule(rules, "minecraft:smithing", List.of("minecraft:smithing_table"));
+        putBuiltinRule(rules, "minecraft:brewing", List.of("minecraft:brewing_stand"));
 
         for (String rule : Config.RECIPE_TYPE_UNLOCK_ITEMS.get()) {
             String[] parts = rule.split("=", 2);
@@ -169,6 +170,13 @@ public final class RecipeUnlocks {
         ResourceLocation typeId = ResourceLocation.parse(recipeTypeId);
         List<ResourceLocation> unlockItems = rules.computeIfAbsent(typeId, ignored -> new ArrayList<>());
         itemIds.stream().map(ResourceLocation::parse).forEach(unlockItems::add);
+    }
+
+    private static void putBuiltinRule(Map<ResourceLocation, List<ResourceLocation>> rules, String recipeTypeId, List<String> itemIds) {
+        ResourceLocation typeId = ResourceLocation.parse(recipeTypeId);
+        if (isBuiltinRecipeTypeEnabled(typeId)) {
+            putRule(rules, recipeTypeId, itemIds);
+        }
     }
 
     private static ItemStack findFirstUnlockItem(Player player, List<ResourceLocation> unlockItemIds) {
@@ -223,8 +231,22 @@ public final class RecipeUnlocks {
     private static void syncToClient(ServerPlayer player) {
         PacketDistributor.sendToPlayer(player, new RecipeUnlockSyncPacket(
                 new ArrayList<>(getUnlockedTypes(player)),
+                getEnabledBuiltinRecipeTypeIds(),
                 getEnabledAdditionalRecipeTypeIds()
         ));
+    }
+
+    public static boolean isBuiltinRecipeTypeEnabled(ResourceLocation recipeTypeId) {
+        String normalized = normalize(recipeTypeId);
+        return Config.ENABLED_BUILTIN_RECIPE_TYPES.get().stream()
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .anyMatch(normalized::equals);
+    }
+
+    private static List<String> getEnabledBuiltinRecipeTypeIds() {
+        return Config.ENABLED_BUILTIN_RECIPE_TYPES.get().stream()
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .toList();
     }
 
     private static List<String> getEnabledAdditionalRecipeTypeIds() {
