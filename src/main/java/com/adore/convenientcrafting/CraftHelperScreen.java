@@ -3,12 +3,14 @@ package com.adore.convenientcrafting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.FormattedText;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -36,18 +38,22 @@ import java.util.stream.Collectors;
  */
 public class CraftHelperScreen extends Screen {
 
-    private static final int PANEL_WIDTH = 260;
-    private static final int PANEL_HEIGHT = 270;
-    private static final int RECIPE_PER_PAGE = 4;
-    private static final int ROW_HEIGHT = 42;
+    private static final int DEFAULT_PANEL_WIDTH = 250;
+    private static final int DEFAULT_PANEL_HEIGHT = 246;
+    private static final int SCREEN_MARGIN = 8;
+    private static final int PANEL_TOP_EXTRA = 10;
+    private static final int NAVIGATION_HEIGHT = 44;
+    private static final int DEFAULT_RECIPE_PER_PAGE = 4;
+    private static final int ROW_HEIGHT = 36;
     private static final int CONTROLS_Y_OFFSET = 18;
     private static final int LIST_Y_OFFSET = 48;
     private static final int RESULT_X_OFFSET = 10;
     private static final int NAME_X_OFFSET = 34;
-    private static final int INGREDIENT_X_OFFSET = 146;
-    private static final int CRAFT_BUTTON_X_OFFSET = PANEL_WIDTH - 42;
-    private static final int MAX_VISIBLE_INGREDIENTS = 4;
     private static final int INGREDIENT_ICON_SIZE = 16;
+    private static final int RESULT_NAME_INGREDIENT_GAP = 8;
+    private static final int MIN_RESULT_NAME_WIDTH = 30;
+    private static final int MIN_INGREDIENT_PANEL_WIDTH = INGREDIENT_ICON_SIZE * 2;
+    private static final int INGREDIENT_BUTTON_GAP = 8;
     private static final int INGREDIENT_SCROLL_BASE_PIXELS_PER_SECOND = 18;
     private static final int INGREDIENT_SCROLL_SPEEDUP_PIXELS_PER_SECOND = 6;
     private static final int INGREDIENT_SCROLL_MAX_PIXELS_PER_SECOND = 72;
@@ -56,6 +62,10 @@ public class CraftHelperScreen extends Screen {
 
     private int panelX;
     private int panelY;
+    private int panelWidth;
+    private int panelHeight;
+    private int recipesPerPage = DEFAULT_RECIPE_PER_PAGE;
+    private int craftButtonXOffset;
     private int currentPage = 0;
     private boolean onlyCraftable = false;
     private boolean searchFocused = false;
@@ -82,13 +92,30 @@ public class CraftHelperScreen extends Screen {
      */
     @Override
     protected void init() {
-        panelX = (width - PANEL_WIDTH) / 2;
-        panelY = (height - PANEL_HEIGHT) / 2;
+        updateLayout();
 
         loadRecipes();
         refreshInventoryCache();
         sortRecipes();
         refreshButtons();
+    }
+
+    private void updateLayout() {
+        int availableWidth = Math.max(160, width - SCREEN_MARGIN * 2);
+        panelWidth = Math.min(DEFAULT_PANEL_WIDTH, availableWidth);
+
+        int availablePanelHeight = Math.max(96, height - SCREEN_MARGIN * 2 - PANEL_TOP_EXTRA);
+        panelHeight = Math.min(DEFAULT_PANEL_HEIGHT, availablePanelHeight);
+
+        recipesPerPage = Math.max(1, (panelHeight - LIST_Y_OFFSET - NAVIGATION_HEIGHT) / ROW_HEIGHT);
+        recipesPerPage = Math.min(recipesPerPage, DEFAULT_RECIPE_PER_PAGE);
+
+        craftButtonXOffset = panelWidth - 42;
+
+        int visualHeight = panelHeight + PANEL_TOP_EXTRA;
+        int visualTop = Math.max(0, Math.min((height - visualHeight) / 2, height - visualHeight));
+        panelX = Math.max(0, (width - panelWidth) / 2);
+        panelY = visualTop + PANEL_TOP_EXTRA;
     }
 
     /**
@@ -265,7 +292,7 @@ public class CraftHelperScreen extends Screen {
     /**
      * 判断配方是否符合当前筛选条件。
      *
-     * @param holder 配方持有者
+     * @param group 配方分组
      * @param craftableCache 可合成状态缓存
      * @return 通过筛选时返回 {@code true}
      */
@@ -399,7 +426,7 @@ public class CraftHelperScreen extends Screen {
     /**
      * 获取用于界面展示的材料图标。
      *
-     * @param recipe 要展示的合成配方
+     * @param entry 要展示的配方条目
      * @return 每个材料槽的第一个可匹配物品堆
      */
     private DisplayIngredient[] getIngredientStacks(RecipeEntry entry) {
@@ -739,38 +766,41 @@ public class CraftHelperScreen extends Screen {
         renderBackground(guiGraphics, mouseX, mouseY, partialTick);
 
         // 面板背景
-        guiGraphics.fill(panelX, panelY - 10, panelX + PANEL_WIDTH, panelY + PANEL_HEIGHT, 0xC0101010);
-        guiGraphics.fill(panelX, panelY - 10, panelX + PANEL_WIDTH, panelY - 8, 0xFF4444FF);
-        guiGraphics.fill(panelX, panelY + PANEL_HEIGHT - 2, panelX + PANEL_WIDTH, panelY + PANEL_HEIGHT, 0xFF4444FF);
+        guiGraphics.fill(panelX, panelY - PANEL_TOP_EXTRA, panelX + panelWidth, panelY + panelHeight, 0xC0101010);
+        guiGraphics.fill(panelX, panelY - PANEL_TOP_EXTRA, panelX + panelWidth, panelY - PANEL_TOP_EXTRA + 2, 0xFF4444FF);
+        guiGraphics.fill(panelX, panelY + panelHeight - 2, panelX + panelWidth, panelY + panelHeight, 0xFF4444FF);
 
         // 标题
         guiGraphics.drawString(font, title, panelX + 8, panelY + 2, 0xFFFFFF, false);
 
         // 可合成数量统计
         int craftableCount = 0;
-        Minecraft mc = Minecraft.getInstance();
         for (RecipeGroup group : sortedRecipeGroups) {
             if (canCraftAnyRecipe(group)) craftableCount++;
         }
         String summary = "可合成: " + craftableCount + "/" + sortedRecipeGroups.size();
-        guiGraphics.drawString(font, summary, panelX + PANEL_WIDTH - font.width(summary) - 34, panelY + 2, 0x888888, false);
+        guiGraphics.drawString(font, summary, panelX + panelWidth - font.width(summary) - 34, panelY + 2, 0x888888, false);
 
         drawFilterControls(guiGraphics);
 
         // 页码
-        int totalPages = (sortedRecipeGroups.size() + RECIPE_PER_PAGE - 1) / RECIPE_PER_PAGE;
+        int totalPages = getTotalPages();
         if (totalPages > 1) {
             String pageStr = (currentPage + 1) + "/" + totalPages;
-            guiGraphics.drawString(font, pageStr, panelX + PANEL_WIDTH / 2 - font.width(pageStr) / 2, panelY + PANEL_HEIGHT - 44, 0xAAAAAA, false);
+            guiGraphics.drawString(font, pageStr, panelX + panelWidth / 2 - font.width(pageStr) / 2, panelY + panelHeight - NAVIGATION_HEIGHT, 0xAAAAAA, false);
         }
 
         // 每个配方的条目
-        int startIndex = currentPage * RECIPE_PER_PAGE;
-        int endIndex = Math.min(startIndex + RECIPE_PER_PAGE, sortedRecipeGroups.size());
+        int startIndex = currentPage * recipesPerPage;
+        int endIndex = Math.min(startIndex + recipesPerPage, sortedRecipeGroups.size());
+        ItemStack hoveredIngredient = ItemStack.EMPTY;
+        ItemStack hoveredResult = ItemStack.EMPTY;
+        int ingredientXOffset = getPageIngredientXOffset(startIndex, endIndex);
+        int ingredientWidth = getIngredientPanelWidth(ingredientXOffset);
 
         if (sortedRecipeGroups.isEmpty()) {
             String emptyText = "没有匹配的配方";
-            guiGraphics.drawString(font, emptyText, panelX + PANEL_WIDTH / 2 - font.width(emptyText) / 2, panelY + LIST_Y_OFFSET + 52, 0xFFAAAAAA, false);
+            guiGraphics.drawString(font, emptyText, panelX + panelWidth / 2 - font.width(emptyText) / 2, panelY + LIST_Y_OFFSET + 52, 0xFFAAAAAA, false);
         }
 
         for (int i = startIndex; i < endIndex; i++) {
@@ -782,28 +812,36 @@ public class CraftHelperScreen extends Screen {
             boolean canCraft = canCraftEntry(entry);
 
             // 产物图标
+            if (!result.isEmpty() && isInside(mouseX, mouseY, panelX + RESULT_X_OFFSET, recipeY + 4, INGREDIENT_ICON_SIZE, INGREDIENT_ICON_SIZE)) {
+                hoveredResult = result;
+            }
             guiGraphics.renderItem(result, panelX + RESULT_X_OFFSET, recipeY + 4);
             guiGraphics.renderItemDecorations(font, result, panelX + RESULT_X_OFFSET, recipeY + 4);
 
             // 产物名称
             String resultName = result.getHoverName().getString();
-            int resultNameWidth = INGREDIENT_X_OFFSET - NAME_X_OFFSET - 10;
+            int resultNameWidth = ingredientXOffset - NAME_X_OFFSET - 10;
             if (font.width(resultName) > resultNameWidth) {
                 resultName = font.ellipsize(FormattedText.of(resultName), resultNameWidth).getString();
             }
             guiGraphics.drawString(font, resultName, panelX + NAME_X_OFFSET, recipeY + 4, canCraft ? 0xFFFFFF : 0x888888, false);
             guiGraphics.drawString(font, "x" + result.getCount(), panelX + NAME_X_OFFSET, recipeY + 16, 0xAAAAAA, false);
 
-            // 材料图标（最多显示 4 种）
+            // 材料图标
             DisplayIngredient[] ingredients = getIngredientStacks(entry);
-            int ingX = panelX + INGREDIENT_X_OFFSET;
-            int ingredientWidth = MAX_VISIBLE_INGREDIENTS * INGREDIENT_ICON_SIZE;
-            int ingredientOffset = getIngredientScrollOffset(ingredients.length, getMaxIngredientCount(group), mouseX, mouseY, ingX, recipeY);
+            int ingX = panelX + ingredientXOffset;
+            int ingredientOffset = getIngredientScrollOffset(ingredients.length, getMaxIngredientCount(group), mouseX, mouseY, ingX, recipeY, ingredientWidth);
             guiGraphics.enableScissor(ingX, recipeY + 6, ingX + ingredientWidth, recipeY + 6 + INGREDIENT_ICON_SIZE);
             for (int j = 0; j < ingredients.length; j++) {
                 DisplayIngredient ingredient = ingredients[j];
                 int itemX = ingX + j * INGREDIENT_ICON_SIZE - ingredientOffset;
                 if (!ingredient.stack().isEmpty() && itemX > ingX - INGREDIENT_ICON_SIZE && itemX < ingX + ingredientWidth) {
+                    int visibleLeft = Math.max(itemX, ingX);
+                    int visibleRight = Math.min(itemX + INGREDIENT_ICON_SIZE, ingX + ingredientWidth);
+                    if (visibleLeft < visibleRight && isInside(mouseX, mouseY, visibleLeft, recipeY + 6, visibleRight - visibleLeft, INGREDIENT_ICON_SIZE)) {
+                        hoveredIngredient = ingredient.stack();
+                    }
+
                     guiGraphics.renderItem(ingredient.stack(), itemX, recipeY + 6);
                     // 缺失的材料上画红色半透明遮罩
                     if (!ingredient.available()) {
@@ -813,10 +851,40 @@ public class CraftHelperScreen extends Screen {
             }
             guiGraphics.disableScissor();
 
-            drawPanelButton(guiGraphics, panelX + CRAFT_BUTTON_X_OFFSET, recipeY + 6, 22, 20, canCraft ? ">" : "X", canCraft);
+            drawPanelButton(guiGraphics, panelX + craftButtonXOffset, recipeY + 6, 22, 20, canCraft ? ">" : "X", canCraft);
         }
 
         drawNavigationButtons(guiGraphics);
+        renderRecipeTooltip(guiGraphics, hoveredIngredient, hoveredResult, mouseX, mouseY);
+    }
+
+    private void renderRecipeTooltip(GuiGraphics guiGraphics, ItemStack ingredient, ItemStack result, int mouseX, int mouseY) {
+        if (!ingredient.isEmpty()) {
+            guiGraphics.renderTooltip(font, ingredient, mouseX, mouseY);
+        } else if (!result.isEmpty()) {
+            guiGraphics.renderTooltip(font, result, mouseX, mouseY);
+        }
+    }
+
+    private int getPageIngredientXOffset(int startIndex, int endIndex) {
+        int ingredientXOffset = getPreferredIngredientXOffset("");
+        for (int i = startIndex; i < endIndex; i++) {
+            RecipeEntry entry = getActiveRecipe(sortedRecipeGroups.get(i));
+            ItemStack result = getEntryResult(entry);
+            ingredientXOffset = Math.max(ingredientXOffset, getPreferredIngredientXOffset(result.getHoverName().getString()));
+        }
+        return ingredientXOffset;
+    }
+
+    private int getPreferredIngredientXOffset(String resultName) {
+        int preferredOffset = NAME_X_OFFSET + font.width(resultName) + RESULT_NAME_INGREDIENT_GAP;
+        int minOffset = NAME_X_OFFSET + MIN_RESULT_NAME_WIDTH + RESULT_NAME_INGREDIENT_GAP;
+        int maxOffset = craftButtonXOffset - INGREDIENT_BUTTON_GAP - MIN_INGREDIENT_PANEL_WIDTH;
+        return Math.max(minOffset, Math.min(preferredOffset, maxOffset));
+    }
+
+    private int getIngredientPanelWidth(int ingredientXOffset) {
+        return Math.max(INGREDIENT_ICON_SIZE, craftButtonXOffset - ingredientXOffset - INGREDIENT_BUTTON_GAP);
     }
 
     /**
@@ -829,7 +897,7 @@ public class CraftHelperScreen extends Screen {
         int controlsY = panelY + CONTROLS_Y_OFFSET;
         int checkboxSize = 12;
         int searchX = panelX + 76;
-        int searchWidth = PANEL_WIDTH - 116;
+        int searchWidth = Math.max(48, panelWidth - 116);
         int searchHeight = 18;
 
         guiGraphics.fill(checkboxX, controlsY + 3, checkboxX + checkboxSize, controlsY + 3 + checkboxSize, 0xFF080808);
@@ -868,12 +936,12 @@ public class CraftHelperScreen extends Screen {
     private void drawNavigationButtons(GuiGraphics guiGraphics) {
         int totalPages = getTotalPages();
         if (totalPages > 1) {
-            drawPanelButton(guiGraphics, panelX + 16, panelY + PANEL_HEIGHT - 34, 34, 20, "<", currentPage > 0);
-            drawPanelButton(guiGraphics, panelX + PANEL_WIDTH - 50, panelY + PANEL_HEIGHT - 34, 34, 20, ">", currentPage + 1 < totalPages);
+            drawPanelButton(guiGraphics, panelX + 16, panelY + panelHeight - 34, 34, 20, "<", currentPage > 0);
+            drawPanelButton(guiGraphics, panelX + panelWidth - 50, panelY + panelHeight - 34, 34, 20, ">", currentPage + 1 < totalPages);
         }
 
-        drawPanelButton(guiGraphics, panelX + PANEL_WIDTH / 2 - 12, panelY + PANEL_HEIGHT - 30, 24, 18, "R", true);
-        drawPanelButton(guiGraphics, panelX + PANEL_WIDTH - 22, panelY - 5, 20, 20, "X", true);
+        drawPanelButton(guiGraphics, panelX + panelWidth / 2 - 12, panelY + panelHeight - 30, 24, 18, "R", true);
+        drawPanelButton(guiGraphics, panelX + panelWidth - 22, panelY - 5, 20, 20, "X", true);
     }
 
     /**
@@ -912,7 +980,7 @@ public class CraftHelperScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         int controlsY = panelY + CONTROLS_Y_OFFSET;
         int searchX = panelX + 76;
-        int searchWidth = PANEL_WIDTH - 116;
+        int searchWidth = Math.max(48, panelWidth - 116);
 
         if (button == 1 && isInside(mouseX, mouseY, searchX, controlsY + 1, searchWidth, 18)) {
             searchFocused = true;
@@ -944,33 +1012,35 @@ public class CraftHelperScreen extends Screen {
         searchFocused = false;
 
         int totalPages = getTotalPages();
-        if (totalPages > 1 && isInside(mouseX, mouseY, panelX + 16, panelY + PANEL_HEIGHT - 34, 34, 20) && turnPage(-1)) {
+        if (totalPages > 1 && isInside(mouseX, mouseY, panelX + 16, panelY + panelHeight - 34, 34, 20) && turnPage(-1)) {
             return true;
         }
-        if (totalPages > 1 && isInside(mouseX, mouseY, panelX + PANEL_WIDTH - 50, panelY + PANEL_HEIGHT - 34, 34, 20) && turnPage(1)) {
+        if (totalPages > 1 && isInside(mouseX, mouseY, panelX + panelWidth - 50, panelY + panelHeight - 34, 34, 20) && turnPage(1)) {
             return true;
         }
-        if (isInside(mouseX, mouseY, panelX + PANEL_WIDTH / 2 - 12, panelY + PANEL_HEIGHT - 30, 24, 18)) {
+        if (isInside(mouseX, mouseY, panelX + panelWidth / 2 - 12, panelY + panelHeight - 30, 24, 18)) {
             refreshInventoryCache();
             sortRecipes();
             currentPage = 0;
             refreshButtons();
             return true;
         }
-        if (isInside(mouseX, mouseY, panelX + PANEL_WIDTH - 22, panelY - 5, 20, 20)) {
+        if (isInside(mouseX, mouseY, panelX + panelWidth - 22, panelY - 5, 20, 20)) {
             onClose();
             return true;
         }
 
-        int startIndex = currentPage * RECIPE_PER_PAGE;
-        int endIndex = Math.min(startIndex + RECIPE_PER_PAGE, sortedRecipeGroups.size());
+        int startIndex = currentPage * recipesPerPage;
+        int endIndex = Math.min(startIndex + recipesPerPage, sortedRecipeGroups.size());
         for (int i = startIndex; i < endIndex; i++) {
             RecipeGroup group = sortedRecipeGroups.get(i);
             RecipeEntry entry = getActiveRecipe(group);
             int recipeY = getRecipeY(i - startIndex);
 
-            if (isInside(mouseX, mouseY, panelX + CRAFT_BUTTON_X_OFFSET, recipeY + 6, 22, 20) && canCraftEntry(entry)) {
-                PacketDistributor.sendToServer(new CraftRecipePacket(entry.id()));
+            if (isInside(mouseX, mouseY, panelX + craftButtonXOffset, recipeY + 6, 22, 20) && canCraftEntry(entry)) {
+                playButtonClickSound();
+                int craftCount = hasShiftDown() ? CraftRecipePacket.MAX_BATCH_CRAFTS : 1;
+                PacketDistributor.sendToServer(new CraftRecipePacket(entry.id(), craftCount));
                 refreshInventoryCache();
                 sortRecipes();
                 refreshButtons();
@@ -979,6 +1049,10 @@ public class CraftHelperScreen extends Screen {
         }
 
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private void playButtonClickSound() {
+        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
     }
 
     /**
@@ -1030,7 +1104,7 @@ public class CraftHelperScreen extends Screen {
      * @return 总页数
      */
     private int getTotalPages() {
-        return (sortedRecipeGroups.size() + RECIPE_PER_PAGE - 1) / RECIPE_PER_PAGE;
+        return (sortedRecipeGroups.size() + recipesPerPage - 1) / recipesPerPage;
     }
 
     /**
@@ -1039,22 +1113,25 @@ public class CraftHelperScreen extends Screen {
      * <p>材料数超过可见上限并且鼠标悬停在材料栏时，完整材料列表会在裁剪窗口内左右往返滑动。
      * 溢出的材料越多，滚动速度越快，让复杂配方更快露出完整材料。</p>
      *
-     * @param ingredientCount 当前配方的材料槽数量
+     * @param currentIngredientCount 当前配方的材料槽数量
+     * @param maxIngredientCount 同一产物分组中最多的材料槽数量
      * @param mouseX 鼠标 X 坐标
      * @param mouseY 鼠标 Y 坐标
      * @param ingX 材料栏左侧 X 坐标
      * @param recipeY 当前配方行顶部 Y 坐标
+     * @param ingredientWidth 材料栏可见宽度
      * @return 当前材料列表向左移动的像素数
      */
-    private int getIngredientScrollOffset(int currentIngredientCount, int maxIngredientCount, int mouseX, int mouseY, int ingX, int recipeY) {
-        int maxOffset = Math.max(0, currentIngredientCount - MAX_VISIBLE_INGREDIENTS) * INGREDIENT_ICON_SIZE;
-        if (maxOffset <= 0 || !isInside(mouseX, mouseY, ingX, recipeY + 4, MAX_VISIBLE_INGREDIENTS * INGREDIENT_ICON_SIZE, 20)) {
+    private int getIngredientScrollOffset(int currentIngredientCount, int maxIngredientCount, int mouseX, int mouseY, int ingX, int recipeY, int ingredientWidth) {
+        int visibleIngredientSlots = Math.max(1, ingredientWidth / INGREDIENT_ICON_SIZE);
+        int maxOffset = Math.max(0, currentIngredientCount - visibleIngredientSlots) * INGREDIENT_ICON_SIZE;
+        if (maxOffset <= 0 || !isInside(mouseX, mouseY, ingX, recipeY + 4, ingredientWidth, 20)) {
             return 0;
         }
 
         int speed = Math.min(
                 INGREDIENT_SCROLL_MAX_PIXELS_PER_SECOND,
-                INGREDIENT_SCROLL_BASE_PIXELS_PER_SECOND + Math.max(0, maxIngredientCount - MAX_VISIBLE_INGREDIENTS) * INGREDIENT_SCROLL_SPEEDUP_PIXELS_PER_SECOND
+                INGREDIENT_SCROLL_BASE_PIXELS_PER_SECOND + Math.max(0, maxIngredientCount - visibleIngredientSlots) * INGREDIENT_SCROLL_SPEEDUP_PIXELS_PER_SECOND
         );
         long cycleDurationMs = Math.max(1L, Math.round(maxOffset * 2000.0D / speed));
         double progress = (System.currentTimeMillis() % cycleDurationMs) / (double) cycleDurationMs;

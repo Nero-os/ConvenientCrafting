@@ -1,6 +1,7 @@
 package com.adore.convenientcrafting;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
@@ -24,7 +25,8 @@ import java.util.function.Predicate;
  *
  * @param recipeId 要合成的配方 ID
  */
-public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPacketPayload {
+public record CraftRecipePacket(ResourceLocation recipeId, int craftCount) implements CustomPacketPayload {
+    public static final int MAX_BATCH_CRAFTS = 64;
 
     /**
      * 数据包类型标识。
@@ -40,6 +42,8 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
         StreamCodec.composite(
             ResourceLocation.STREAM_CODEC,
             CraftRecipePacket::recipeId,
+            ByteBufCodecs.VAR_INT,
+            CraftRecipePacket::craftCount,
             CraftRecipePacket::new
         );
 
@@ -62,7 +66,7 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
     public static void handleServer(CraftRecipePacket message, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player) {
-                craftRecipe(player, message.recipeId());
+                craftRecipe(player, message.recipeId(), message.craftCount());
             }
         });
     }
@@ -76,12 +80,25 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
      * @param player 发起合成请求的玩家
      * @param recipeId 要合成的配方 ID
      */
-    private static void craftRecipe(ServerPlayer player, ResourceLocation recipeId) {
+    private static void craftRecipe(ServerPlayer player, ResourceLocation recipeId, int requestedCraftCount) {
         var server = player.getServer();
         if (server == null) return;
 
+        int craftCount = Math.min(requestedCraftCount, MAX_BATCH_CRAFTS);
+        if (craftCount <= 0) return;
+
+        boolean craftedAny = false;
+
         if (BrewingRecipeSupport.isBrewingRecipeId(recipeId)) {
-            finishCrafting(player, buildBrewingCraftingResult(player, recipeId));
+            for (int i = 0; i < craftCount; i++) {
+                if (!finishCrafting(player, buildBrewingCraftingResult(player, recipeId))) {
+                    break;
+                }
+                craftedAny = true;
+            }
+            if (craftedAny) {
+                player.containerMenu.broadcastChanges();
+            }
             return;
         }
 
@@ -89,25 +106,33 @@ public record CraftRecipePacket(ResourceLocation recipeId) implements CustomPack
         if (optional.isEmpty()) return;
 
         Recipe<?> recipe = optional.get().value();
-        finishCrafting(player, buildCraftingResult(player, recipe));
+        for (int i = 0; i < craftCount; i++) {
+            if (!finishCrafting(player, buildCraftingResult(player, recipe))) {
+                break;
+            }
+            craftedAny = true;
+        }
+
+        if (craftedAny) {
+            player.containerMenu.broadcastChanges();
+        }
     }
 
-    private static void finishCrafting(ServerPlayer player, CraftingResult craftingResult) {
-        if (craftingResult == null || craftingResult.results().isEmpty()) return;
+    private static boolean finishCrafting(ServerPlayer player, CraftingResult craftingResult) {
+        if (craftingResult == null || craftingResult.results().isEmpty()) return false;
 
         // Check if there's enough space in inventory for the result
-        if (!hasSpaceForResults(player.getInventory(), craftingResult.results(), craftingResult.ingredients())) return;
+        if (!hasSpaceForResults(player.getInventory(), craftingResult.results(), craftingResult.ingredients())) return false;
 
         // Consume ingredients
-        if (!consumeIngredients(player, craftingResult.ingredients())) return;
+        if (!consumeIngredients(player, craftingResult.ingredients())) return false;
 
         // Give result
         for (ItemStack result : craftingResult.results()) {
             player.getInventory().add(result.copy());
         }
 
-        // Broadcast changes
-        player.containerMenu.broadcastChanges();
+        return true;
     }
 
     /**

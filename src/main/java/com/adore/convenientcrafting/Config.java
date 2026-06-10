@@ -2,7 +2,6 @@ package com.adore.convenientcrafting;
 
 import java.util.List;
 
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
@@ -18,34 +17,6 @@ public class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     /**
-     * 是否在公共初始化阶段输出泥土方块注册名。
-     */
-    public static final ModConfigSpec.BooleanValue LOG_DIRT_BLOCK = BUILDER
-            .comment("Whether to log the dirt block on common setup")
-            .define("logDirtBlock", true);
-
-    /**
-     * 示例整型配置值。
-     */
-    public static final ModConfigSpec.IntValue MAGIC_NUMBER = BUILDER
-            .comment("A magic number")
-            .defineInRange("magicNumber", 42, 0, Integer.MAX_VALUE);
-
-    /**
-     * 示例数字日志前缀文本。
-     */
-    public static final ModConfigSpec.ConfigValue<String> MAGIC_NUMBER_INTRODUCTION = BUILDER
-            .comment("What you want the introduction message to be for the magic number")
-            .define("magicNumberIntroduction", "The magic number is... ");
-
-    /**
-     * 以资源位置字符串形式配置的物品列表。
-     */
-    public static final ModConfigSpec.ConfigValue<List<? extends String>> ITEM_STRINGS = BUILDER
-            .comment("A list of items to log on common setup.")
-            .defineListAllowEmpty("items", List.of("minecraft:iron_ingot"), () -> "", Config::validateItemName);
-
-    /**
      * 内置支持的一键合成工作台配方类型。
      */
     public static final ModConfigSpec.ConfigValue<List<? extends String>> ENABLED_BUILTIN_RECIPE_TYPES = BUILDER
@@ -54,6 +25,7 @@ public class Config {
                     "Remove an id from this list to disable that workstation type.",
                     "Supported built-in ids: minecraft:crafting, minecraft:smithing, minecraft:brewing"
             )
+            .translation("convenientcrafting.configuration.enabledBuiltinRecipeTypes")
             .defineListAllowEmpty(
                     "enabledBuiltinRecipeTypes",
                     List.of("minecraft:crafting", "minecraft:smithing", "minecraft:brewing"),
@@ -64,7 +36,7 @@ public class Config {
     /**
      * 额外启用的一键合成配方类型。
      *
-     * <p>默认只内置支持工作台和锻造台。这里的额外类型会按“普通材料列表 + 固定产物”处理，
+     * <p>默认内置支持工作台、锻造台和酿造台。这里的额外类型会按“普通材料列表 + 固定产物”处理，
      * 适合整合包作者显式启用已确认安全的模组工作方块配方。</p>
      */
     public static final ModConfigSpec.ConfigValue<List<? extends String>> ADDITIONAL_RECIPE_TYPES = BUILDER
@@ -74,6 +46,7 @@ public class Config {
                     "Extra recipe types also need a matching recipeTypeUnlockItems rule before players can unlock them.",
                     "Examples: create:mechanical_crafting, malum:spirit_infusion"
             )
+            .translation("convenientcrafting.configuration.additionalRecipeTypes")
             .defineListAllowEmpty("additionalRecipeTypes", List.of(), () -> "", Config::validateResourceLocation);
 
     /**
@@ -86,25 +59,16 @@ public class Config {
             .comment(
                     "Recipe type unlock rules. Format: recipe_type=item_id,item_id",
                     "Players permanently unlock the recipe type after obtaining any listed item.",
-                    "Built-in defaults are always available for minecraft:crafting and minecraft:smithing.",
+                    "Built-in defaults are always available for minecraft:crafting, minecraft:smithing, and minecraft:brewing.",
                     "Examples: malum:spirit_infusion=malum:spirit_altar, create:mechanical_crafting=create:mechanical_crafter"
             )
+            .translation("convenientcrafting.configuration.recipeTypeUnlockItems")
             .defineListAllowEmpty("recipeTypeUnlockItems", List.of(), () -> "", Config::validateUnlockRule);
 
     /**
      * NeoForge 使用的最终配置规格。
      */
     static final ModConfigSpec SPEC = BUILDER.build();
-
-    /**
-     * 校验配置中的物品资源位置是否存在于注册表。
-     *
-     * @param obj 配置列表中的原始值
-     * @return 值是有效物品资源位置时返回 {@code true}
-     */
-    private static boolean validateItemName(final Object obj) {
-        return obj instanceof String itemName && BuiltInRegistries.ITEM.containsKey(ResourceLocation.parse(itemName));
-    }
 
     /**
      * 校验配置值是否是合法资源位置。

@@ -1,7 +1,13 @@
 {
   "itemGroup.convenientcrafting": "便捷合成",
-  "block.convenientcrafting.example_block": "便捷合成方块",
-  "item.convenientcrafting.example_item": "便捷合成物品",
+  "convenientcrafting.configuration.title": "%s 配置",
+  "convenientcrafting.configuration.section.convenientcrafting.common.toml": "%s 通用配置",
+  "convenientcrafting.configuration.enabledBuiltinRecipeTypes": "启用的原版工作台配方类型",
+  "convenientcrafting.configuration.enabledBuiltinRecipeTypes.tooltip": "控制便捷合成内置支持的原版工作台配方类型。\n默认启用: minecraft:crafting、minecraft:smithing、minecraft:brewing。\n从列表中移除某一项即可禁用对应工作台类型。",
+  "convenientcrafting.configuration.additionalRecipeTypes": "额外启用的配方类型",
+  "convenientcrafting.configuration.additionalRecipeTypes.tooltip": "给整合包作者使用的额外配方类型列表。\n只建议启用可以直接按材料和固定产物安全合成的配方类型。\n额外配方类型还需要在“配方类型解锁物品规则”里配置解锁物品后，玩家才能解锁使用。\n示例: create:mechanical_crafting、malum:spirit_infusion。",
+  "convenientcrafting.configuration.recipeTypeUnlockItems": "配方类型解锁物品规则",
+  "convenientcrafting.configuration.recipeTypeUnlockItems.tooltip": "配置玩家获得哪些物品后可以永久解锁对应配方类型。\n格式: recipe_type=item_id,item_id。\n内置的 minecraft:crafting、minecraft:smithing 和 minecraft:brewing 会使用默认解锁规则。\n示例: malum:spirit_infusion=malum:spirit_altar、create:mechanical_crafting=create:mechanical_crafter。",
 
   "button.convenientcrafting.sort": "整理背包",
 
