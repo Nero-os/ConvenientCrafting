@@ -1,4 +1,4 @@
-package com.adore.convenientcrafting;
+package com.adore.convenientcrafting.inventory;
 
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;

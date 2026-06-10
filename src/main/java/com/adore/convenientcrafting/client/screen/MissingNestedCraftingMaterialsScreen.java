@@ -1,4 +1,6 @@
-package com.adore.convenientcrafting;
+package com.adore.convenientcrafting.client.screen;
+
+import com.adore.convenientcrafting.network.NestedCraftingMissingMaterialsPacket;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;

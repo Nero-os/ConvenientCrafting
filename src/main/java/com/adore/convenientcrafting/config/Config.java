@@ -1,4 +1,4 @@
-package com.adore.convenientcrafting;
+package com.adore.convenientcrafting.config;
 
 import java.util.List;
 
@@ -68,7 +68,7 @@ public class Config {
     /**
      * NeoForge 使用的最终配置规格。
      */
-    static final ModConfigSpec SPEC = BUILDER.build();
+    public static final ModConfigSpec SPEC = BUILDER.build();
 
     /**
      * 校验配置值是否是合法资源位置。

@@ -2,13 +2,17 @@ package com.adore.convenientcrafting;
 
 import org.slf4j.Logger;
 
+import com.adore.convenientcrafting.config.Config;
+import com.adore.convenientcrafting.network.CraftRecipePacket;
+import com.adore.convenientcrafting.network.NestedCraftingMissingMaterialsPacket;
+import com.adore.convenientcrafting.network.RecipeUnlockSyncPacket;
+import com.adore.convenientcrafting.network.SortInventoryPacket;
+import com.adore.convenientcrafting.recipe.unlock.RecipeUnlocks;
+import com.adore.convenientcrafting.registry.ModBlocks;
+import com.adore.convenientcrafting.registry.ModCreativeModeTabs;
+import com.adore.convenientcrafting.registry.ModItems;
 import com.mojang.logging.LogUtils;
 
-import net.minecraft.core.registries.Registries;
-import net.minecraft.network.chat.Component;
-import net.minecraft.world.item.CreativeModeTab;
-import net.minecraft.world.item.CreativeModeTabs;
-import net.minecraft.world.item.Items;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
@@ -19,8 +23,6 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
-import net.neoforged.neoforge.registries.DeferredHolder;
-import net.neoforged.neoforge.registries.DeferredRegister;
 
 /**
  * Convenient Crafting 模组的公共入口类。
@@ -40,31 +42,6 @@ public class ConvenientCrafting {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     /**
-     * 方块延迟注册器。
-     */
-    public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(MODID);
-
-    /**
-     * 物品延迟注册器。
-     */
-    public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MODID);
-
-    /**
-     * 创造模式标签延迟注册器。
-     */
-    public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);
-
-    /**
-     * 创造模式标签。
-     */
-    public static final DeferredHolder<CreativeModeTab, CreativeModeTab> CONVENIENT_CRAFTING_TAB = CREATIVE_MODE_TABS.register("convenient_crafting", () -> CreativeModeTab.builder()
-            .title(Component.translatable("itemGroup.convenientcrafting"))
-            .withTabsBefore(CreativeModeTabs.COMBAT)
-            .icon(Items.CRAFTING_TABLE::getDefaultInstance)
-            .displayItems((parameters, output) -> {
-            }).build());
-
-    /**
      * 创建模组入口并注册生命周期监听器。
      *
      * @param modEventBus 模组事件总线
@@ -74,9 +51,9 @@ public class ConvenientCrafting {
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::registerPackets);
 
-        BLOCKS.register(modEventBus);
-        ITEMS.register(modEventBus);
-        CREATIVE_MODE_TABS.register(modEventBus);
+        ModBlocks.register(modEventBus);
+        ModItems.register(modEventBus);
+        ModCreativeModeTabs.register(modEventBus);
 
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(new RecipeUnlocks());

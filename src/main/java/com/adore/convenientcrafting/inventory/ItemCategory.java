@@ -1,4 +1,4 @@
-package com.adore.convenientcrafting;
+package com.adore.convenientcrafting.inventory;
 
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.Item;

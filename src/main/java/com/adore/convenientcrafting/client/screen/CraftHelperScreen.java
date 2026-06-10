@@ -1,4 +1,9 @@
-package com.adore.convenientcrafting;
+package com.adore.convenientcrafting.client.screen;
+
+import com.adore.convenientcrafting.network.CraftRecipePacket;
+import com.adore.convenientcrafting.recipe.BrewingRecipeSupport;
+import com.adore.convenientcrafting.recipe.RecipeSupport;
+import com.adore.convenientcrafting.recipe.unlock.ClientRecipeUnlocks;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -83,7 +88,7 @@ public class CraftHelperScreen extends Screen {
     /**
      * 创建合成助手界面。
      */
-    protected CraftHelperScreen() {
+    public CraftHelperScreen() {
         super(Component.translatable("gui.convenientcrafting.craft_helper"));
     }
 

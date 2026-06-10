@@ -1,4 +1,9 @@
-package com.adore.convenientcrafting;
+package com.adore.convenientcrafting.recipe.unlock;
+
+import com.adore.convenientcrafting.ConvenientCrafting;
+import com.adore.convenientcrafting.config.Config;
+import com.adore.convenientcrafting.network.RecipeUnlockSyncPacket;
+import com.adore.convenientcrafting.recipe.BrewingRecipeSupport;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;

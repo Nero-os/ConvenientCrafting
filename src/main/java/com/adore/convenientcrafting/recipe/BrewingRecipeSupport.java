@@ -1,4 +1,6 @@
-package com.adore.convenientcrafting;
+package com.adore.convenientcrafting.recipe;
+
+import com.adore.convenientcrafting.ConvenientCrafting;
 
 import net.minecraft.core.Holder;
 import net.minecraft.core.RegistryAccess;

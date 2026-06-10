@@ -1,4 +1,8 @@
-package com.adore.convenientcrafting;
+package com.adore.convenientcrafting.recipe;
+
+import com.adore.convenientcrafting.config.Config;
+import com.adore.convenientcrafting.recipe.unlock.ClientRecipeUnlocks;
+import com.adore.convenientcrafting.recipe.unlock.RecipeUnlocks;
 
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;

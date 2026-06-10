@@ -1,4 +1,9 @@
-package com.adore.convenientcrafting;
+package com.adore.convenientcrafting.network;
+
+import com.adore.convenientcrafting.ConvenientCrafting;
+import com.adore.convenientcrafting.recipe.BrewingRecipeSupport;
+import com.adore.convenientcrafting.recipe.RecipeSupport;
+import com.adore.convenientcrafting.recipe.unlock.RecipeUnlocks;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;

@@ -1,4 +1,4 @@
-package com.adore.convenientcrafting;
+package com.adore.convenientcrafting.recipe.unlock;
 
 import net.minecraft.resources.ResourceLocation;
 

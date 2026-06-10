@@ -1,5 +1,8 @@
-package com.adore.convenientcrafting;
+package com.adore.convenientcrafting.client;
 
+import com.adore.convenientcrafting.ConvenientCrafting;
+import com.adore.convenientcrafting.client.screen.CraftHelperScreen;
+import com.adore.convenientcrafting.network.SortInventoryPacket;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
