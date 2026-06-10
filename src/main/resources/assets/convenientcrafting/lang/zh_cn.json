@@ -13,5 +13,8 @@
 
   "key.convenientcrafting.open_craft_helper": "打开便捷合成",
   "key.categories.convenientcrafting": "便捷合成",
-  "gui.convenientcrafting.craft_helper": "便捷合成"
+  "gui.convenientcrafting.craft_helper": "便捷合成",
+  "gui.convenientcrafting.nested_missing.title": "缺少原材料",
+  "gui.convenientcrafting.nested_missing.message": "递归合成前发现缺少以下原材料：",
+  "gui.convenientcrafting.nested_missing.more": "还有 %s 种材料未显示"
 }

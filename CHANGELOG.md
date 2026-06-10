@@ -9,6 +9,7 @@
 - Added `enabledBuiltinRecipeTypes` config so modpack users can choose which vanilla workstation recipe types are available in convenient crafting.
 - Added Shift-click batch crafting for the convenient crafting `>` button.
 - Added the standard button click sound when pressing the convenient crafting `>` button.
+- Added Alt-click nested crafting for the convenient crafting `>` button, including a preflight raw-material check and a scrollable tree-style missing-material popup.
 - Added item name tooltips when hovering required ingredients in the convenient crafting recipe list.
 - Added item tooltips when hovering recipe result icons in the convenient crafting recipe list.
 

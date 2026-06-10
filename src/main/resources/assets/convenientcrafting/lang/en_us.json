@@ -13,5 +13,8 @@
 
   "key.convenientcrafting.open_craft_helper": "Open Convenient Crafting",
   "key.categories.convenientcrafting": "Convenient Crafting",
-  "gui.convenientcrafting.craft_helper": "Convenient Crafting"
+  "gui.convenientcrafting.craft_helper": "Convenient Crafting",
+  "gui.convenientcrafting.nested_missing.title": "Missing Raw Materials",
+  "gui.convenientcrafting.nested_missing.message": "Nested crafting is missing these raw materials:",
+  "gui.convenientcrafting.nested_missing.more": "%s more materials not shown"
 }

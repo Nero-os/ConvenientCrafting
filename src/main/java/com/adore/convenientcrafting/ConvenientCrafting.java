@@ -60,7 +60,7 @@ public class ConvenientCrafting {
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> CONVENIENT_CRAFTING_TAB = CREATIVE_MODE_TABS.register("convenient_crafting", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.convenientcrafting"))
             .withTabsBefore(CreativeModeTabs.COMBAT)
-            .icon(() -> Items.CRAFTING_TABLE.getDefaultInstance())
+            .icon(Items.CRAFTING_TABLE::getDefaultInstance)
             .displayItems((parameters, output) -> {
             }).build());
 
@@ -105,6 +105,11 @@ public class ConvenientCrafting {
             RecipeUnlockSyncPacket.TYPE,
             RecipeUnlockSyncPacket.STREAM_CODEC,
             RecipeUnlockSyncPacket::handleClient
+        );
+        registrar.playToClient(
+            NestedCraftingMissingMaterialsPacket.TYPE,
+            NestedCraftingMissingMaterialsPacket.STREAM_CODEC,
+            NestedCraftingMissingMaterialsPacket::handleClient
         );
     }
 

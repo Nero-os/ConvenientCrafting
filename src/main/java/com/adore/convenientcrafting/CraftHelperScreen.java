@@ -363,6 +363,14 @@ public class CraftHelperScreen extends Screen {
         return canCraftRecipe(entry.recipe());
     }
 
+    private boolean canClickCraftButton(RecipeEntry entry) {
+        return canCraftEntry(entry) || canAttemptNestedCrafting(entry);
+    }
+
+    private boolean canAttemptNestedCrafting(RecipeEntry entry) {
+        return hasAltDown() && entry != null && !entry.isBrewing() && entry.recipe() != null && !getEntryResult(entry).isEmpty();
+    }
+
     /**
      * 判断当前玩家背包是否能合成指定配方。
      *
@@ -810,6 +818,9 @@ public class CraftHelperScreen extends Screen {
 
             int recipeY = getRecipeY(i - startIndex);
             boolean canCraft = canCraftEntry(entry);
+            boolean canAttemptNested = canAttemptNestedCrafting(entry);
+            boolean canClickCraft = canCraft || canAttemptNested;
+            String craftButtonLabel = canAttemptNested && !canCraft ? "→" : canClickCraft ? ">" : "X";
 
             // 产物图标
             if (!result.isEmpty() && isInside(mouseX, mouseY, panelX + RESULT_X_OFFSET, recipeY + 4, INGREDIENT_ICON_SIZE, INGREDIENT_ICON_SIZE)) {
@@ -851,7 +862,7 @@ public class CraftHelperScreen extends Screen {
             }
             guiGraphics.disableScissor();
 
-            drawPanelButton(guiGraphics, panelX + craftButtonXOffset, recipeY + 6, 22, 20, canCraft ? ">" : "X", canCraft);
+            drawPanelButton(guiGraphics, panelX + craftButtonXOffset, recipeY + 6, 22, 20, craftButtonLabel, canClickCraft);
         }
 
         drawNavigationButtons(guiGraphics);
@@ -1037,10 +1048,10 @@ public class CraftHelperScreen extends Screen {
             RecipeEntry entry = getActiveRecipe(group);
             int recipeY = getRecipeY(i - startIndex);
 
-            if (isInside(mouseX, mouseY, panelX + craftButtonXOffset, recipeY + 6, 22, 20) && canCraftEntry(entry)) {
+            if (isInside(mouseX, mouseY, panelX + craftButtonXOffset, recipeY + 6, 22, 20) && canClickCraftButton(entry)) {
                 playButtonClickSound();
                 int craftCount = hasShiftDown() ? CraftRecipePacket.MAX_BATCH_CRAFTS : 1;
-                PacketDistributor.sendToServer(new CraftRecipePacket(entry.id(), craftCount));
+                PacketDistributor.sendToServer(new CraftRecipePacket(entry.id(), craftCount, hasAltDown()));
                 refreshInventoryCache();
                 sortRecipes();
                 refreshButtons();

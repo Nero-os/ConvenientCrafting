@@ -4,6 +4,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
@@ -12,9 +13,11 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
+import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.SmithingRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipeInput;
 import net.minecraft.world.item.alchemy.PotionBrewing;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.*;
@@ -25,7 +28,7 @@ import java.util.function.Predicate;
  *
  * @param recipeId 要合成的配方 ID
  */
-public record CraftRecipePacket(ResourceLocation recipeId, int craftCount) implements CustomPacketPayload {
+public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boolean craftNested) implements CustomPacketPayload {
     public static final int MAX_BATCH_CRAFTS = 64;
 
     /**
@@ -44,6 +47,8 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount) imple
             CraftRecipePacket::recipeId,
             ByteBufCodecs.VAR_INT,
             CraftRecipePacket::craftCount,
+            ByteBufCodecs.BOOL,
+            CraftRecipePacket::craftNested,
             CraftRecipePacket::new
         );
 
@@ -66,7 +71,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount) imple
     public static void handleServer(CraftRecipePacket message, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player) {
-                craftRecipe(player, message.recipeId(), message.craftCount());
+                craftRecipe(player, message.recipeId(), message.craftCount(), message.craftNested());
             }
         });
     }
@@ -80,12 +85,17 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount) imple
      * @param player 发起合成请求的玩家
      * @param recipeId 要合成的配方 ID
      */
-    private static void craftRecipe(ServerPlayer player, ResourceLocation recipeId, int requestedCraftCount) {
+    private static void craftRecipe(ServerPlayer player, ResourceLocation recipeId, int requestedCraftCount, boolean craftNested) {
         var server = player.getServer();
         if (server == null) return;
 
         int craftCount = Math.min(requestedCraftCount, MAX_BATCH_CRAFTS);
         if (craftCount <= 0) return;
+
+        if (craftNested) {
+            craftNestedRecipe(player, recipeId);
+            return;
+        }
 
         boolean craftedAny = false;
 
@@ -116,6 +126,291 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount) imple
         if (craftedAny) {
             player.containerMenu.broadcastChanges();
         }
+    }
+
+    private static void craftNestedRecipe(ServerPlayer player, ResourceLocation recipeId) {
+        var server = player.getServer();
+        if (server == null) return;
+
+        if (BrewingRecipeSupport.isBrewingRecipeId(recipeId)) {
+            craftRecipe(player, recipeId, 1, false);
+            return;
+        }
+
+        var optional = server.getRecipeManager().byKey(recipeId);
+        if (optional.isEmpty()) return;
+
+        RecipeHolder<?> targetHolder = optional.get();
+        NestedCraftingSimulation simulation = simulateNestedCrafting(player, targetHolder);
+        if (!simulation.success()) {
+            PacketDistributor.sendToPlayer(player, new NestedCraftingMissingMaterialsPacket(buildMissingMaterialRows(player, targetHolder)));
+            return;
+        }
+
+        InventoryBackup backup = InventoryBackup.capture(player);
+        boolean craftedAll = true;
+        for (ResourceLocation plannedRecipeId : simulation.plan()) {
+            var planned = server.getRecipeManager().byKey(plannedRecipeId);
+            if (planned.isEmpty() || !finishCrafting(player, buildCraftingResult(player, planned.get().value()))) {
+                craftedAll = false;
+                break;
+            }
+        }
+
+        if (craftedAll) {
+            player.containerMenu.broadcastChanges();
+        } else {
+            backup.restore(player);
+            player.containerMenu.broadcastChanges();
+        }
+    }
+
+    private static NestedCraftingSimulation simulateNestedCrafting(ServerPlayer player, RecipeHolder<?> targetHolder) {
+        MaterialPool pool = MaterialPool.fromPlayer(player);
+        List<ResourceLocation> plan = new ArrayList<>();
+        MissingMaterials missing = new MissingMaterials();
+        Set<ResourceLocation> visiting = new HashSet<>();
+
+        boolean success = simulateRecipe(player, targetHolder, pool, plan, missing, visiting);
+        if (!success) {
+            return new NestedCraftingSimulation(false, List.of(), missing.toStacks());
+        }
+
+        return new NestedCraftingSimulation(true, plan, List.of());
+    }
+
+    /**
+     * 为递归合成失败弹窗构建默认展开的材料树。
+     *
+     * <p>第一行固定为目标产物，后续行按照配方依赖逐层展开。
+     * 能从玩家背包或当前容器中直接取得的材料正常显示，无法继续合成的叶子材料标记为缺失。</p>
+     *
+     * @param player 发起合成的玩家
+     * @param targetHolder 目标配方
+     * @return 可直接发送给客户端展示的树形行列表
+     */
+    private static List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> buildMissingMaterialRows(ServerPlayer player, RecipeHolder<?> targetHolder) {
+        List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows = new ArrayList<>();
+        MaterialPool pool = MaterialPool.fromPlayer(player);
+        ItemStack target = targetHolder.value().getResultItem(player.registryAccess()).copy();
+        if (!target.isEmpty()) {
+            rows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(target, false, 0));
+        }
+        buildMissingRowsForRecipe(player, targetHolder, pool, rows, new HashSet<>(), 1);
+        return rows;
+    }
+
+    /**
+     * 递归构建某个配方的材料树。
+     *
+     * <p>该方法会优先消耗已有材料；已有材料不足时，会寻找能产出该材料的工作台配方继续展开。
+     * 如果某条中间配方路径也失败，则保留缺失数量最少的失败路径，方便玩家看到最接近成功的材料链。</p>
+     *
+     * @param player 发起合成的玩家
+     * @param holder 当前正在展开的配方
+     * @param pool 递归预检使用的材料池快照
+     * @param rows 输出的树形行
+     * @param visiting 当前递归栈中的配方 ID，用于避免套娃循环
+     * @param depth 当前树深度
+     * @return 当前配方是否能通过已有材料或递归合成满足
+     */
+    private static boolean buildMissingRowsForRecipe(
+            ServerPlayer player,
+            RecipeHolder<?> holder,
+            MaterialPool pool,
+            List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows,
+            Set<ResourceLocation> visiting,
+            int depth
+    ) {
+        Recipe<?> recipe = holder.value();
+        if (!RecipeSupport.isUnlockedFor(player, recipe) || visiting.contains(holder.id())) {
+            return false;
+        }
+
+        List<Ingredient> ingredients = RecipeSupport.getNonEmptyIngredients(recipe);
+        if (ingredients.isEmpty()) {
+            return false;
+        }
+
+        visiting.add(holder.id());
+        boolean success = true;
+        for (Ingredient ingredient : ingredients) {
+            // 先尝试使用已有材料；这能让树里清楚区分“已有”和“缺失”的节点。
+            ItemStack consumed = pool.consumeStack(ingredient);
+            if (!consumed.isEmpty()) {
+                rows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(consumed, false, depth));
+                continue;
+            }
+
+            MissingTreeAttempt bestFailedAttempt = null;
+            // 已有材料不够时，尝试选择一个能产出该材料的中间配方继续展开。
+            for (RecipeHolder<?> candidate : findNestedCraftingCandidates(player, ingredient)) {
+                if (visiting.contains(candidate.id())) {
+                    continue;
+                }
+
+                MaterialPool candidatePool = pool.copy();
+                List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> candidateRows = new ArrayList<>();
+                ItemStack candidateResult = candidate.value().getResultItem(player.registryAccess()).copy();
+                if (!candidateResult.isEmpty()) {
+                    candidateRows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(candidateResult, false, depth));
+                }
+
+                boolean candidateSuccess = buildMissingRowsForRecipe(player, candidate, candidatePool, candidateRows, visiting, depth + 1)
+                        && !candidatePool.consumeStack(ingredient).isEmpty();
+                if (candidateSuccess) {
+                    pool.copyFrom(candidatePool);
+                    rows.addAll(candidateRows);
+                    bestFailedAttempt = null;
+                    break;
+                }
+
+                int missingCount = countMissingRows(candidateRows);
+                if (bestFailedAttempt == null || missingCount < bestFailedAttempt.missingCount()) {
+                    bestFailedAttempt = new MissingTreeAttempt(candidateRows, missingCount);
+                }
+            }
+
+            if (bestFailedAttempt != null && !bestFailedAttempt.rows().isEmpty()) {
+                rows.addAll(bestFailedAttempt.rows());
+            } else {
+                // 没有可展开的中间配方时，这个材料就是最终缺失的原材料。
+                rows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(getIngredientDisplayStack(ingredient), true, depth));
+            }
+            success = false;
+        }
+        visiting.remove(holder.id());
+
+        if (success) {
+            ItemStack result = recipe.getResultItem(player.registryAccess()).copy();
+            pool.add(result);
+        }
+        return success;
+    }
+
+    /**
+     * 统计树形行中缺失材料的数量，用于选择更有参考价值的失败路径。
+     */
+    private static int countMissingRows(List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows) {
+        int count = 0;
+        for (NestedCraftingMissingMaterialsPacket.MissingMaterialRow row : rows) {
+            if (row.missing()) {
+                count += Math.max(1, row.stack().getCount());
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 从材料条件中选取一个代表物品用于缺失提示。
+     */
+    private static ItemStack getIngredientDisplayStack(Ingredient ingredient) {
+        ItemStack[] options = ingredient.getItems();
+        return options.length > 0 ? options[0].copyWithCount(1) : ItemStack.EMPTY;
+    }
+
+    private static boolean simulateRecipe(
+            ServerPlayer player,
+            RecipeHolder<?> holder,
+            MaterialPool pool,
+            List<ResourceLocation> plan,
+            MissingMaterials missing,
+            Set<ResourceLocation> visiting
+    ) {
+        Recipe<?> recipe = holder.value();
+        if (!RecipeSupport.isUnlockedFor(player, recipe) || visiting.contains(holder.id())) {
+            return false;
+        }
+
+        List<Ingredient> ingredients = RecipeSupport.getNonEmptyIngredients(recipe);
+        if (ingredients.isEmpty()) return false;
+
+        ItemStack result = recipe.getResultItem(player.registryAccess()).copy();
+        if (result.isEmpty()) return false;
+
+        visiting.add(holder.id());
+        boolean success = true;
+        for (Ingredient ingredient : ingredients) {
+            if (!satisfyIngredient(player, ingredient, pool, plan, missing, visiting)) {
+                success = false;
+                break;
+            }
+        }
+        visiting.remove(holder.id());
+
+        if (!success) return false;
+
+        plan.add(holder.id());
+        pool.add(result);
+        return true;
+    }
+
+    private static boolean satisfyIngredient(
+            ServerPlayer player,
+            Ingredient ingredient,
+            MaterialPool pool,
+            List<ResourceLocation> plan,
+            MissingMaterials missing,
+            Set<ResourceLocation> visiting
+    ) {
+        if (pool.consume(ingredient)) {
+            return true;
+        }
+
+        MissingMaterials bestMissing = null;
+        for (RecipeHolder<?> candidate : findNestedCraftingCandidates(player, ingredient)) {
+            if (visiting.contains(candidate.id())) {
+                continue;
+            }
+
+            MaterialPool candidatePool = pool.copy();
+            List<ResourceLocation> candidatePlan = new ArrayList<>(plan);
+            MissingMaterials candidateMissing = new MissingMaterials();
+
+            if (simulateRecipe(player, candidate, candidatePool, candidatePlan, candidateMissing, visiting)
+                    && candidatePool.consume(ingredient)) {
+                pool.copyFrom(candidatePool);
+                plan.clear();
+                plan.addAll(candidatePlan);
+                return true;
+            }
+
+            if (!candidateMissing.isEmpty()
+                    && (bestMissing == null || candidateMissing.totalCount() < bestMissing.totalCount())) {
+                bestMissing = candidateMissing;
+            }
+        }
+
+        if (bestMissing != null) {
+            missing.addAll(bestMissing);
+        } else {
+            missing.addIngredient(ingredient);
+        }
+        return false;
+    }
+
+    private static List<RecipeHolder<?>> findNestedCraftingCandidates(ServerPlayer player, Ingredient targetIngredient) {
+        var server = player.getServer();
+        if (server == null) return List.of();
+
+        List<RecipeHolder<?>> candidates = new ArrayList<>();
+        for (RecipeHolder<?> holder : server.getRecipeManager().getRecipes()) {
+            if (!(holder.value() instanceof CraftingRecipe craftingRecipe)) {
+                continue;
+            }
+
+            if (!RecipeSupport.isUnlockedFor(player, craftingRecipe)) {
+                continue;
+            }
+
+            ItemStack result = craftingRecipe.getResultItem(server.registryAccess());
+            if (!result.isEmpty() && targetIngredient.test(result)) {
+                candidates.add(holder);
+            }
+        }
+
+        candidates.sort(Comparator.comparing(holder -> holder.id().toString()));
+        return candidates;
     }
 
     private static boolean finishCrafting(ServerPlayer player, CraftingResult craftingResult) {
@@ -438,6 +733,138 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount) imple
             player.getInventory().setItem(source.slotIndex(), stack);
         } else {
             player.containerMenu.getSlot(source.slotIndex()).set(stack);
+        }
+    }
+
+    private static String stackKey(ItemStack stack) {
+        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        return (itemId != null ? itemId.toString() : "unknown:" + stack.getItem()) + stack.getComponentsPatch();
+    }
+
+    private static class MaterialPool {
+        private final List<ItemStack> stacks;
+
+        private MaterialPool(List<ItemStack> stacks) {
+            this.stacks = stacks;
+        }
+
+        private static MaterialPool fromPlayer(ServerPlayer player) {
+            List<ItemStack> stacks = new ArrayList<>();
+            for (AvailableMaterial material : getAvailableMaterials(player)) {
+                stacks.add(material.stack().copy());
+            }
+            return new MaterialPool(stacks);
+        }
+
+        private MaterialPool copy() {
+            List<ItemStack> copied = new ArrayList<>();
+            for (ItemStack stack : stacks) {
+                copied.add(stack.copy());
+            }
+            return new MaterialPool(copied);
+        }
+
+        private void copyFrom(MaterialPool other) {
+            stacks.clear();
+            for (ItemStack stack : other.stacks) {
+                stacks.add(stack.copy());
+            }
+        }
+
+        private boolean consume(Ingredient ingredient) {
+            return !consumeStack(ingredient).isEmpty();
+        }
+
+        private ItemStack consumeStack(Ingredient ingredient) {
+            for (ItemStack stack : stacks) {
+                if (!stack.isEmpty() && ingredient.test(stack)) {
+                    ItemStack consumed = stack.copyWithCount(1);
+                    stack.shrink(1);
+                    return consumed;
+                }
+            }
+            return ItemStack.EMPTY;
+        }
+
+        private void add(ItemStack stack) {
+            if (!stack.isEmpty()) {
+                stacks.add(stack.copy());
+            }
+        }
+    }
+
+    private static class MissingMaterials {
+        private final Map<String, ItemStack> missing = new LinkedHashMap<>();
+
+        private void addIngredient(Ingredient ingredient) {
+            ItemStack[] options = ingredient.getItems();
+            if (options.length > 0) {
+                addStack(options[0].copyWithCount(1));
+            }
+        }
+
+        private void addStack(ItemStack stack) {
+            if (stack.isEmpty()) return;
+
+            String key = stackKey(stack);
+            ItemStack existing = missing.get(key);
+            if (existing == null) {
+                missing.put(key, stack.copy());
+            } else {
+                existing.grow(stack.getCount());
+            }
+        }
+
+        private void addAll(MissingMaterials other) {
+            for (ItemStack stack : other.missing.values()) {
+                addStack(stack);
+            }
+        }
+
+        private boolean isEmpty() {
+            return missing.isEmpty();
+        }
+
+        private int totalCount() {
+            return missing.values().stream().mapToInt(ItemStack::getCount).sum();
+        }
+
+        private List<ItemStack> toStacks() {
+            return new ArrayList<>(missing.values());
+        }
+    }
+
+    private record NestedCraftingSimulation(boolean success, List<ResourceLocation> plan, List<ItemStack> missingMaterials) {
+    }
+
+    private record MissingTreeAttempt(List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows, int missingCount) {
+    }
+
+    private record InventoryBackup(List<ItemStack> playerInventory, List<ItemStack> menuSlots) {
+        private static InventoryBackup capture(ServerPlayer player) {
+            List<ItemStack> playerInventory = new ArrayList<>();
+            Inventory inventory = player.getInventory();
+            for (int i = 0; i < inventory.getContainerSize(); i++) {
+                playerInventory.add(inventory.getItem(i).copy());
+            }
+
+            List<ItemStack> menuSlots = new ArrayList<>();
+            for (Slot slot : player.containerMenu.slots) {
+                menuSlots.add(slot.getItem().copy());
+            }
+
+            return new InventoryBackup(playerInventory, menuSlots);
+        }
+
+        private void restore(ServerPlayer player) {
+            Inventory inventory = player.getInventory();
+            for (int i = 0; i < inventory.getContainerSize() && i < playerInventory.size(); i++) {
+                inventory.setItem(i, playerInventory.get(i).copy());
+            }
+
+            for (int i = 0; i < player.containerMenu.slots.size() && i < menuSlots.size(); i++) {
+                player.containerMenu.getSlot(i).set(menuSlots.get(i).copy());
+            }
         }
     }
 
