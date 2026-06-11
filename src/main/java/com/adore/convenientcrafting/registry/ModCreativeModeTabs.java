@@ -6,7 +6,6 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
-import net.minecraft.world.item.Items;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -31,8 +30,10 @@ public final class ModCreativeModeTabs {
             CREATIVE_MODE_TABS.register("convenient_crafting", () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.convenientcrafting"))
                     .withTabsBefore(CreativeModeTabs.COMBAT)
-                    .icon(Items.CRAFTING_TABLE::getDefaultInstance)
+                    .icon(ModItems.SEED_BAG::toStack)
                     .displayItems((parameters, output) -> {
+                        output.accept(ModItems.SEED_BAG.get());
+                        output.accept(ModItems.DYE_BAG.get());
                     })
                     .build());
 

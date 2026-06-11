@@ -1,5 +1,8 @@
 {
   "itemGroup.convenientcrafting": "便捷合成",
+  "item.convenientcrafting.seed_bag": "种子袋",
+  "item.convenientcrafting.dye_bag": "染料袋",
+  "item.convenientcrafting.bag.slots": "已用槽位：%s/%s",
   "convenientcrafting.configuration.title": "%s 配置",
   "convenientcrafting.configuration.section.convenientcrafting.common.toml": "%s 通用配置",
   "convenientcrafting.configuration.enabledBuiltinRecipeTypes": "启用的原版工作台配方类型",
@@ -10,6 +13,7 @@
   "convenientcrafting.configuration.recipeTypeUnlockItems.tooltip": "配置玩家获得哪些物品后可以永久解锁对应配方类型。\n格式: recipe_type=item_id,item_id。\n内置的 minecraft:crafting、minecraft:smithing 和 minecraft:brewing 会使用默认解锁规则。\n示例: malum:spirit_infusion=malum:spirit_altar、create:mechanical_crafting=create:mechanical_crafter。",
 
   "button.convenientcrafting.sort": "整理背包",
+  "tooltip.convenientcrafting.sort_inventory": "整理背包\n在背包界面按鼠标中键也可整理",
 
   "key.convenientcrafting.open_craft_helper": "打开便捷合成",
   "key.categories.convenientcrafting": "便捷合成",

@@ -1,10 +1,12 @@
 package com.adore.convenientcrafting.network;
 
 import com.adore.convenientcrafting.ConvenientCrafting;
+import com.adore.convenientcrafting.item.CategorizedBagItem;
 import com.adore.convenientcrafting.recipe.BrewingRecipeSupport;
 import com.adore.convenientcrafting.recipe.RecipeSupport;
 import com.adore.convenientcrafting.recipe.unlock.RecipeUnlocks;
 
+import net.minecraft.core.NonNullList;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -571,7 +573,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
 
         // 只模拟扣除来自玩家背包的材料；箱子材料不会给玩家背包释放槽位。
         for (IngredientUse ingredient : consumedIngredients) {
-            if (ingredient.source().playerInventory()) {
+            if (ingredient.source().playerInventory() && !ingredient.source().bagContent()) {
                 simulatedInventory.get(ingredient.source().slotIndex()).shrink(1);
             }
         }
@@ -677,7 +679,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack stack = inventory.getItem(i);
             if (!stack.isEmpty()) {
-                available.add(new AvailableMaterial(new MaterialSource(true, i), stack.copy()));
+                addAvailableMaterial(available, MaterialSource.inventory(i), stack);
             }
         }
 
@@ -686,12 +688,25 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
                 Slot slot = player.containerMenu.slots.get(i);
                 ItemStack stack = slot.getItem();
                 if (slot.container != inventory && !stack.isEmpty() && !slot.isFake() && slot.mayPickup(player) && slot.mayPlace(stack)) {
-                    available.add(new AvailableMaterial(new MaterialSource(false, i), stack.copy()));
+                    addAvailableMaterial(available, MaterialSource.menu(i), stack);
                 }
             }
         }
 
         return available;
+    }
+
+    private static void addAvailableMaterial(List<AvailableMaterial> available, MaterialSource source, ItemStack stack) {
+        available.add(new AvailableMaterial(source, stack.copy()));
+        if (stack.getItem() instanceof CategorizedBagItem) {
+            NonNullList<ItemStack> contents = CategorizedBagItem.getContents(stack);
+            for (int i = 0; i < contents.size(); i++) {
+                ItemStack contained = contents.get(i);
+                if (!contained.isEmpty()) {
+                    available.add(new AvailableMaterial(source.withBagSlot(i), contained.copy()));
+                }
+            }
+        }
     }
 
     /**
@@ -720,10 +735,19 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
      * @return 来源槽位中的物品
      */
     private static ItemStack getSourceStack(ServerPlayer player, MaterialSource source) {
+        ItemStack stack;
         if (source.playerInventory()) {
-            return player.getInventory().getItem(source.slotIndex());
+            stack = player.getInventory().getItem(source.slotIndex());
+        } else {
+            stack = player.containerMenu.getSlot(source.slotIndex()).getItem();
         }
-        return player.containerMenu.getSlot(source.slotIndex()).getItem();
+        if (!source.bagContent()) {
+            return stack;
+        }
+        if (!(stack.getItem() instanceof CategorizedBagItem)) {
+            return ItemStack.EMPTY;
+        }
+        return CategorizedBagItem.getContents(stack).get(source.bagSlotIndex()).copy();
     }
 
     /**
@@ -734,7 +758,21 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
      * @param stack 要写回的物品堆
      */
     private static void setSourceStack(ServerPlayer player, MaterialSource source, ItemStack stack) {
-        if (source.playerInventory()) {
+        if (source.bagContent()) {
+            ItemStack bagStack = source.playerInventory()
+                    ? player.getInventory().getItem(source.slotIndex())
+                    : player.containerMenu.getSlot(source.slotIndex()).getItem();
+            if (bagStack.getItem() instanceof CategorizedBagItem) {
+                NonNullList<ItemStack> contents = CategorizedBagItem.getContents(bagStack);
+                contents.set(source.bagSlotIndex(), stack);
+                CategorizedBagItem.setContents(bagStack, contents);
+                if (source.playerInventory()) {
+                    player.getInventory().setItem(source.slotIndex(), bagStack);
+                } else {
+                    player.containerMenu.getSlot(source.slotIndex()).set(bagStack);
+                }
+            }
+        } else if (source.playerInventory()) {
             player.getInventory().setItem(source.slotIndex(), stack);
         } else {
             player.containerMenu.getSlot(source.slotIndex()).set(stack);
@@ -909,7 +947,22 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
      * @param playerInventory {@code true} 表示玩家背包，{@code false} 表示当前容器菜单槽位
      * @param slotIndex 玩家背包槽位或容器菜单槽位索引
      */
-    private record MaterialSource(boolean playerInventory, int slotIndex) {
+    private record MaterialSource(boolean playerInventory, int slotIndex, int bagSlotIndex) {
+        private static MaterialSource inventory(int slotIndex) {
+            return new MaterialSource(true, slotIndex, -1);
+        }
+
+        private static MaterialSource menu(int slotIndex) {
+            return new MaterialSource(false, slotIndex, -1);
+        }
+
+        private MaterialSource withBagSlot(int bagSlotIndex) {
+            return new MaterialSource(playerInventory, slotIndex, bagSlotIndex);
+        }
+
+        private boolean bagContent() {
+            return bagSlotIndex >= 0;
+        }
     }
 
     /**

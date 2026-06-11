@@ -1,8 +1,14 @@
 package com.adore.convenientcrafting.registry;
 
 import com.adore.convenientcrafting.ConvenientCrafting;
+import com.adore.convenientcrafting.item.CategorizedBagItem;
 
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.component.ItemContainerContents;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.common.Tags;
+import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 /**
@@ -16,7 +22,21 @@ public final class ModItems {
      */
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(ConvenientCrafting.MODID);
 
+    public static final DeferredItem<Item> SEED_BAG = ITEMS.register(
+            "seed_bag",
+            () -> new CategorizedBagItem(bagProperties(), Tags.Items.SEEDS));
+
+    public static final DeferredItem<Item> DYE_BAG = ITEMS.register(
+            "dye_bag",
+            () -> new CategorizedBagItem(bagProperties(), Tags.Items.DYES));
+
     private ModItems() {
+    }
+
+    private static Item.Properties bagProperties() {
+        return new Item.Properties()
+                .stacksTo(1)
+                .component(DataComponents.CONTAINER, ItemContainerContents.EMPTY);
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.adore.convenientcrafting.inventory;
 
+import com.adore.convenientcrafting.item.CategorizedBagItem;
+
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
@@ -19,6 +21,11 @@ import java.util.stream.Collectors;
  * 方块注册名或数量进行排序，最后按最大堆叠数重新拆分并写回槽位。</p>
  */
 public class InventorySorter {
+    private static final int PLAYER_INVENTORY_SIZE = 36;
+    private static final int HOTBAR_START = 0;
+    private static final int HOTBAR_END = 9;
+    private static final int MAIN_INVENTORY_START = 9;
+    private static final int MAIN_INVENTORY_END = PLAYER_INVENTORY_SIZE;
 
     /**
      * 整理玩家背包。
@@ -28,28 +35,28 @@ public class InventorySorter {
     public static void sortInventory(Inventory inventory) {
         if (inventory == null) return;
 
-        Map<Item, Integer> itemCounts = new HashMap<>();
+        compactMatchingItemsIntoBags(inventory, PLAYER_INVENTORY_SIZE);
+
+        Map<String, StackBucket> itemCounts = new LinkedHashMap<>();
 
         // 第一步：只记录物品类型和总数量，避免原始槽位顺序影响后续排序结果。
-        for (int i = 0; i < inventory.getContainerSize(); i++) {
+        for (int i = 0; i < PLAYER_INVENTORY_SIZE; i++) {
             ItemStack stack = inventory.getItem(i);
             if (!stack.isEmpty()) {
-                Item item = stack.getItem();
-                int count = itemCounts.getOrDefault(item, 0);
-                itemCounts.put(item, count + stack.getCount());
+                addToBuckets(itemCounts, stack);
             }
         }
 
         // 第二步：清空原槽位，后续按排序后的顺序重新写入。
-        for (int i = 0; i < inventory.getContainerSize(); i++) {
+        for (int i = 0; i < PLAYER_INVENTORY_SIZE; i++) {
             inventory.setItem(i, ItemStack.EMPTY);
         }
 
-        List<Map.Entry<Item, Integer>> sortedItems = itemCounts.entrySet().stream()
-                .sorted(InventorySorter::compareItems)
+        List<StackBucket> sortedItems = itemCounts.values().stream()
+                .sorted(InventorySorter::compareStacks)
                 .collect(Collectors.toList());
 
-        distributeItems(inventory, sortedItems, true);
+        distributeItems(inventory, sortedItems, true, PLAYER_INVENTORY_SIZE);
     }
 
     /**
@@ -60,15 +67,15 @@ public class InventorySorter {
     public static void sortContainer(Container container) {
         if (container == null) return;
 
-        Map<Item, Integer> itemCounts = new HashMap<>();
+        compactMatchingItemsIntoBags(container, container.getContainerSize());
+
+        Map<String, StackBucket> itemCounts = new LinkedHashMap<>();
 
         // 与玩家背包逻辑一致：先汇总数量，避免直接移动物品时出现槽位覆盖。
         for (int i = 0; i < container.getContainerSize(); i++) {
             ItemStack stack = container.getItem(i);
             if (!stack.isEmpty()) {
-                Item item = stack.getItem();
-                int count = itemCounts.getOrDefault(item, 0);
-                itemCounts.put(item, count + stack.getCount());
+                addToBuckets(itemCounts, stack);
             }
         }
 
@@ -76,11 +83,11 @@ public class InventorySorter {
             container.setItem(i, ItemStack.EMPTY);
         }
 
-        List<Map.Entry<Item, Integer>> sortedItems = itemCounts.entrySet().stream()
-                .sorted(InventorySorter::compareItems)
+        List<StackBucket> sortedItems = itemCounts.values().stream()
+                .sorted(InventorySorter::compareStacks)
                 .collect(Collectors.toList());
 
-        distributeItems(container, sortedItems, false);
+        distributeItems(container, sortedItems, false, container.getContainerSize());
     }
 
     /**
@@ -93,9 +100,9 @@ public class InventorySorter {
      * @param b 第二个物品及其总数量
      * @return 小于 0 表示 {@code a} 排在前面，大于 0 表示 {@code b} 排在前面
      */
-    private static int compareItems(Map.Entry<Item, Integer> a, Map.Entry<Item, Integer> b) {
-        Item itemA = a.getKey();
-        Item itemB = b.getKey();
+    private static int compareStacks(StackBucket a, StackBucket b) {
+        Item itemA = a.prototype.getItem();
+        Item itemB = b.prototype.getItem();
 
         ItemCategory catA = ItemCategory.categorizeItem(itemA);
         ItemCategory catB = ItemCategory.categorizeItem(itemB);
@@ -122,7 +129,7 @@ public class InventorySorter {
             }
         }
 
-        return Integer.compare(b.getValue(), a.getValue());
+        return Integer.compare(b.count, a.count);
     }
 
     /**
@@ -146,31 +153,26 @@ public class InventorySorter {
      * @param isPlayerInventory 是否按玩家背包的快捷栏偏好处理
      * @param <T> 容器类型
      */
-    private static <T extends Container> void distributeItems(T container, List<Map.Entry<Item, Integer>> sortedItems, boolean isPlayerInventory) {
-        int hotbarStart = 36;
-        int hotbarEnd = 45;
-        int mainInventoryStart = 9;
-        int mainInventoryEnd = 36;
-
+    private static <T extends Container> void distributeItems(
+            T container, List<StackBucket> sortedItems, boolean isPlayerInventory, int sortableSlots) {
         int currentSlot = 0;
 
-        for (Map.Entry<Item, Integer> entry : sortedItems) {
-            Item item = entry.getKey();
-            int totalCount = entry.getValue();
-            ItemStack tempStack = new ItemStack(item);
-            int maxStackSize = item.getMaxStackSize(tempStack);
+        for (StackBucket entry : sortedItems) {
+            Item item = entry.prototype.getItem();
+            int totalCount = entry.count;
+            int maxStackSize = entry.prototype.getMaxStackSize();
 
             boolean frequentTool = isFrequentTool(item);
 
             while (totalCount > 0) {
                 int stackSize = Math.min(totalCount, maxStackSize);
-                ItemStack newStack = new ItemStack(item, stackSize);
+                ItemStack newStack = entry.prototype.copyWithCount(stackSize);
 
                 int preferredSlot = -1;
 
                 if (frequentTool && isPlayerInventory) {
                     // 常用工具先抢占快捷栏空位，方便整理后立刻使用。
-                    for (int slot = hotbarStart; slot < hotbarEnd; slot++) {
+                    for (int slot = HOTBAR_START; slot < HOTBAR_END; slot++) {
                         if (container.getItem(slot).isEmpty()) {
                             preferredSlot = slot;
                             break;
@@ -179,7 +181,7 @@ public class InventorySorter {
 
                     if (preferredSlot == -1) {
                         // 快捷栏已满时，再退回玩家主背包区域。
-                        for (int slot = mainInventoryStart; slot < mainInventoryEnd; slot++) {
+                        for (int slot = MAIN_INVENTORY_START; slot < MAIN_INVENTORY_END; slot++) {
                             if (container.getItem(slot).isEmpty()) {
                                 preferredSlot = slot;
                                 break;
@@ -190,7 +192,7 @@ public class InventorySorter {
 
                 if (preferredSlot == -1) {
                     // 普通物品从当前扫描位置继续查找，避免每次都从 0 开始造成额外重复扫描。
-                    for (int slot = currentSlot; slot < container.getContainerSize(); slot++) {
+                    for (int slot = currentSlot; slot < sortableSlots; slot++) {
                         if (container.getItem(slot).isEmpty()) {
                             preferredSlot = slot;
                             currentSlot = slot + 1;
@@ -201,7 +203,7 @@ public class InventorySorter {
 
                 if (preferredSlot == -1) {
                     // 如果前面的偏好扫描都没找到，再全容器兜底扫描一次。
-                    for (int slot = 0; slot < container.getContainerSize(); slot++) {
+                    for (int slot = 0; slot < sortableSlots; slot++) {
                         if (container.getItem(slot).isEmpty()) {
                             preferredSlot = slot;
                             break;
@@ -216,5 +218,65 @@ public class InventorySorter {
                 totalCount -= stackSize;
             }
         }
+    }
+
+    private static void compactMatchingItemsIntoBags(Container container, int sortableSlots) {
+        List<BagSlot> bags = new ArrayList<>();
+        for (int i = 0; i < sortableSlots; i++) {
+            ItemStack stack = container.getItem(i);
+            if (stack.getItem() instanceof CategorizedBagItem) {
+                bags.add(new BagSlot(i, stack));
+            }
+        }
+
+        if (bags.isEmpty()) {
+            return;
+        }
+
+        for (int i = 0; i < sortableSlots; i++) {
+            ItemStack stack = container.getItem(i);
+            if (stack.isEmpty() || stack.getItem() instanceof CategorizedBagItem) {
+                continue;
+            }
+
+            for (BagSlot bag : bags) {
+                if (stack.isEmpty()) {
+                    break;
+                }
+                if (bag.stack().getItem() instanceof CategorizedBagItem bagItem && bagItem.insert(bag.stack(), stack) > 0) {
+                    container.setItem(bag.slotIndex(), bag.stack());
+                }
+            }
+
+            container.setItem(i, stack.isEmpty() ? ItemStack.EMPTY : stack);
+        }
+    }
+
+    private static void addToBuckets(Map<String, StackBucket> buckets, ItemStack stack) {
+        String key = buildStackKey(stack);
+        StackBucket bucket = buckets.get(key);
+        if (bucket == null) {
+            buckets.put(key, new StackBucket(stack.copyWithCount(1), stack.getCount()));
+        } else {
+            bucket.count += stack.getCount();
+        }
+    }
+
+    private static String buildStackKey(ItemStack stack) {
+        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        return (itemId != null ? itemId.toString() : "unknown:" + stack.getItem()) + stack.getComponentsPatch();
+    }
+
+    private static class StackBucket {
+        private final ItemStack prototype;
+        private int count;
+
+        private StackBucket(ItemStack prototype, int count) {
+            this.prototype = prototype;
+            this.count = count;
+        }
+    }
+
+    private record BagSlot(int slotIndex, ItemStack stack) {
     }
 }

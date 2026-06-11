@@ -1,6 +1,7 @@
 package com.adore.convenientcrafting.client.screen;
 
 import com.adore.convenientcrafting.network.CraftRecipePacket;
+import com.adore.convenientcrafting.item.CategorizedBagItem;
 import com.adore.convenientcrafting.recipe.BrewingRecipeSupport;
 import com.adore.convenientcrafting.recipe.RecipeSupport;
 import com.adore.convenientcrafting.recipe.unlock.ClientRecipeUnlocks;
@@ -221,6 +222,17 @@ public class CraftHelperScreen extends Screen {
             if (!stack.isEmpty()) {
                 String key = buildItemKey(stack);
                 cachedInventoryCounts.merge(key, stack.getCount(), Integer::sum);
+                addContainedBagCounts(stack);
+            }
+        }
+    }
+
+    private void addContainedBagCounts(ItemStack stack) {
+        if (stack.getItem() instanceof CategorizedBagItem) {
+            for (ItemStack contained : CategorizedBagItem.getContents(stack)) {
+                if (!contained.isEmpty()) {
+                    cachedInventoryCounts.merge(buildItemKey(contained), contained.getCount(), Integer::sum);
+                }
             }
         }
     }
@@ -667,7 +679,7 @@ public class CraftHelperScreen extends Screen {
             ItemStack stack = mc.player.getInventory().getItem(i);
             if (!stack.isEmpty()) {
                 // 使用副本参与匹配，避免客户端预览阶段直接修改玩家背包。
-                available.add(stack.copy());
+                addAvailableStack(available, stack);
             }
         }
 
@@ -675,12 +687,23 @@ public class CraftHelperScreen extends Screen {
             for (var slot : mc.player.containerMenu.slots) {
                 ItemStack stack = slot.getItem();
                 if (slot.container != mc.player.getInventory() && !stack.isEmpty() && !slot.isFake() && slot.mayPickup(mc.player) && slot.mayPlace(stack)) {
-                    available.add(stack.copy());
+                    addAvailableStack(available, stack);
                 }
             }
         }
 
         return available;
+    }
+
+    private static void addAvailableStack(List<ItemStack> available, ItemStack stack) {
+        available.add(stack.copy());
+        if (stack.getItem() instanceof CategorizedBagItem) {
+            for (ItemStack contained : CategorizedBagItem.getContents(stack)) {
+                if (!contained.isEmpty()) {
+                    available.add(contained.copy());
+                }
+            }
+        }
     }
 
     /**

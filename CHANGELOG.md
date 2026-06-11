@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.4.0 - 2026-06-11
+
+### Added
+
+- Added Seed Bag and Dye Bag items with vanilla-style item textures, item models, localization, and creative tab entries.
+- Added leather/string and vanilla bundle upgrade crafting recipes for Seed Bag and Dye Bag.
+- Added category-limited 9-slot storage for Seed Bag and Dye Bag contents.
+- Added automatic pickup routing so matching seeds and dyes go into existing bags before normal inventory pickup.
+- Added support for using materials stored inside bags from the convenient crafting panel opened with `G`.
+- Added inventory sorting integration so matching loose items are packed into existing bags before sorting.
+- Added middle-click inventory sorting from the player inventory screen.
+
+### Changed
+
+- Convenient crafting now treats bag contents as available materials for crafting, smithing, brewing, configured simple recipes, and nested crafting checks.
+- Inventory sorting now preserves item component data, preventing container-like items such as bags from losing their stored contents during sorting.
+- Convenient Crafting creative tab now uses the Seed Bag as its icon and displays both bag items.
+- Inventory sort button now uses a compact custom icon-style button with a tooltip instead of a text glyph.
+
+### Fixed
+
+- Fixed player inventory sorting writing tools and other items into armor or offhand slots.
+
 ## 1.3.0 - 2026-06-10
 
 ### Added
@@ -82,6 +105,7 @@
 
 ## 1.0.0 - 2026-06-06
 
+SmartBundle.
 Initial release by Nero-os.
 
 ### Added

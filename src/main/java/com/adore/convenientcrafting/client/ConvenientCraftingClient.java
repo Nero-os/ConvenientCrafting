@@ -5,6 +5,8 @@ import com.adore.convenientcrafting.client.screen.CraftHelperScreen;
 import com.adore.convenientcrafting.network.SortInventoryPacket;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
@@ -125,21 +127,76 @@ public class ConvenientCraftingClient {
         Screen screen = event.getScreen();
 
         if (screen instanceof InventoryScreen inventoryScreen) {
-            int buttonWidth = 10;
-            int buttonHeight = 10;
+            int buttonWidth = 14;
+            int buttonHeight = 14;
             int guiLeft = (inventoryScreen.width - 176) / 2;
             int guiTop = (inventoryScreen.height - 166) / 2;
-            int x = guiLeft + 140;
-            int y = guiTop + 64;
+            int x = guiLeft + 138;
+            int y = guiTop + 62;
 
-            Button sortButton = Button.builder(
-                            Component.literal("⇄"), // or ☰
-                            btn -> PacketDistributor.sendToServer(new SortInventoryPacket(false))
-                    )
-                    .bounds(x, y, buttonWidth, buttonHeight)
-                    .build();
+            event.addListener(new SortInventoryButton(x, y, buttonWidth, buttonHeight));
+        }
+    }
 
-            event.addListener(sortButton);
+    @SubscribeEvent
+    static void onInventoryMiddleClick(ScreenEvent.MouseButtonPressed.Pre event) {
+        if (event.getScreen() instanceof InventoryScreen && event.getButton() == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
+            sendSortInventoryPacket();
+            event.setCanceled(true);
+        }
+    }
+
+    private static void sendSortInventoryPacket() {
+        PacketDistributor.sendToServer(new SortInventoryPacket(false));
+    }
+
+    private static class SortInventoryButton extends Button {
+        private SortInventoryButton(int x, int y, int width, int height) {
+            super(
+                    x,
+                    y,
+                    width,
+                    height,
+                    Component.translatable("button.convenientcrafting.sort"),
+                    button -> sendSortInventoryPacket(),
+                    DEFAULT_NARRATION
+            );
+            setTooltip(Tooltip.create(Component.translatable("tooltip.convenientcrafting.sort_inventory")));
+        }
+
+        @Override
+        protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+            int border = isHoveredOrFocused() ? 0xFFFFFFFF : 0xFF6B6B6B;
+            int top = isHoveredOrFocused() ? 0xFFB8C6B3 : 0xFF8F9B8A;
+            int middle = isHoveredOrFocused() ? 0xFF5A6A56 : 0xFF3D493A;
+            int shadow = 0xFF171A17;
+            int icon = isHoveredOrFocused() ? 0xFFFFFFFF : 0xFFE5E5E5;
+            int iconShadow = 0xFF1F241F;
+
+            int x = getX();
+            int y = getY();
+            int right = x + getWidth();
+            int bottom = y + getHeight();
+
+            guiGraphics.fill(x, y, right, bottom, shadow);
+            guiGraphics.fill(x + 1, y + 1, right - 1, bottom - 1, border);
+            guiGraphics.fill(x + 2, y + 2, right - 2, bottom - 2, middle);
+            guiGraphics.fill(x + 2, y + 2, right - 2, y + 3, top);
+
+            drawSortLine(guiGraphics, x + 4, y + 5, 6, iconShadow);
+            drawSortLine(guiGraphics, x + 4, y + 8, 4, iconShadow);
+            drawSortLine(guiGraphics, x + 4, y + 11, 7, iconShadow);
+            drawSortLine(guiGraphics, x + 3, y + 4, 6, icon);
+            drawSortLine(guiGraphics, x + 3, y + 7, 4, icon);
+            drawSortLine(guiGraphics, x + 3, y + 10, 7, icon);
+
+            guiGraphics.fill(x + 10, y + 4, x + 11, y + 5, icon);
+            guiGraphics.fill(x + 8, y + 7, x + 9, y + 8, icon);
+            guiGraphics.fill(x + 11, y + 10, x + 12, y + 11, icon);
+        }
+
+        private static void drawSortLine(GuiGraphics guiGraphics, int x, int y, int width, int color) {
+            guiGraphics.fill(x, y, x + width, y + 1, color);
         }
     }
 }

@@ -1,0 +1,23 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "#": {
+      "tag": "c:dyes"
+    },
+    "B": {
+      "item": "minecraft:bundle"
+    },
+    "L": {
+      "item": "minecraft:leather"
+    }
+  },
+  "pattern": [
+    " B ",
+    "L#L"
+  ],
+  "result": {
+    "count": 1,
+    "id": "convenientcrafting:dye_bag"
+  }
+}
