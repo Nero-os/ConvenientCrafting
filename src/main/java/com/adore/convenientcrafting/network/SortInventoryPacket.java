@@ -18,7 +18,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
  *
  * @param isContainer {@code true} 表示整理当前打开的容器，{@code false} 表示整理玩家背包
  */
-public record SortInventoryPacket(boolean isContainer) implements CustomPacketPayload {
+public record SortInventoryPacket(boolean isContainer, boolean compactMaterials) implements CustomPacketPayload {
     /**
      * 数据包类型标识。
      */
@@ -33,6 +33,8 @@ public record SortInventoryPacket(boolean isContainer) implements CustomPacketPa
         StreamCodec.composite(
             ByteBufCodecs.BOOL,
             SortInventoryPacket::isContainer,
+            ByteBufCodecs.BOOL,
+            SortInventoryPacket::compactMaterials,
             SortInventoryPacket::new
         );
 

@@ -1,10 +1,10 @@
 # Changelog
 
-## 1.4.0 - 2026-06-11
+## 1.4.0 - 2026-06-12
 
 ### Added
 
-- Added Seed Bag and Dye Bag items with vanilla-style item textures, item models, localization, and creative tab entries.
+- Added Seed Bag and Dye Bag items with vanilla-style item textures, empty/filled states, fullness bars, item models, localization, and creative tab entries.
 - Added leather/string and vanilla bundle upgrade crafting recipes for Seed Bag and Dye Bag.
 - Added category-limited 9-slot storage for Seed Bag and Dye Bag contents.
 - Added automatic pickup routing so matching seeds and dyes go into existing bags before normal inventory pickup.

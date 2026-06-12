@@ -1,0 +1,6 @@
+{
+  "parent": "convenientcrafting:item/seed_bag",
+  "textures": {
+    "layer0": "convenientcrafting:item/seed_bag"
+  }
+}

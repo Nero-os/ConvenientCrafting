@@ -166,20 +166,39 @@ public class CategorizedBagItem extends Item {
 
     @Override
     public boolean isBarVisible(ItemStack stack) {
-        return getUsedSlotCount(stack) > 0;
+        return getStoredItemCount(stack) > 0;
     }
 
     /**
-     * 使用原版物品条显示 9 个内部槽位的占用比例。
+     * 使用原版物品条显示收纳袋的盈满程度。
+     *
+     * <p>每个内部槽位按自身最大堆叠数折算为一格容量，因此 64 个种子会填满
+     * 一个九分之一容量槽，而不是和 1 个种子显示相同的进度。</p>
      */
     @Override
     public int getBarWidth(ItemStack stack) {
-        return Math.min(13, (int)Math.ceil(13.0D * getUsedSlotCount(stack) / SLOT_COUNT));
+        return Math.min(1 + Mth.floor(getFullnessDisplay(stack) * (MAX_BAR_WIDTH - 1)), MAX_BAR_WIDTH);
     }
 
     @Override
     public int getBarColor(ItemStack stack) {
         return BAR_COLOR;
+    }
+
+    /**
+     * 计算收纳袋的填充比例，返回值范围为 {@code 0.0F} 到 {@code 1.0F}。
+     *
+     * @param bagStack 收纳袋物品堆
+     * @return 当前内容占总容量的比例
+     */
+    public static float getFullnessDisplay(ItemStack bagStack) {
+        float usedSlots = 0.0F;
+        for (ItemStack stack : getContents(bagStack)) {
+            if (!stack.isEmpty()) {
+                usedSlots += (float)stack.getCount() / (float)stack.getMaxStackSize();
+            }
+        }
+        return Mth.clamp(usedSlots / SLOT_COUNT, 0.0F, 1.0F);
     }
 
     @Override
@@ -240,6 +259,19 @@ public class CategorizedBagItem extends Item {
         for (ItemStack stack : getContents(bagStack)) {
             if (!stack.isEmpty()) {
                 count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 统计收纳袋内实际存放的物品总数，用于判断是否需要显示盈满进度条。
+     */
+    private static int getStoredItemCount(ItemStack bagStack) {
+        int count = 0;
+        for (ItemStack stack : getContents(bagStack)) {
+            if (!stack.isEmpty()) {
+                count += stack.getCount();
             }
         }
         return count;
