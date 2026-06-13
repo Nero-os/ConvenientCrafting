@@ -30,6 +30,8 @@ public class MissingNestedCraftingMaterialsScreen extends Screen {
     private final Screen previous;
     private final List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows;
     private int scrollOffset;
+    private boolean draggingScrollBar;
+    private int scrollDragOffsetY;
 
     /**
      * 创建缺失材料弹窗。
@@ -142,18 +144,13 @@ public class MissingNestedCraftingMaterialsScreen extends Screen {
      * 绘制材料树滚动条。
      */
     private void drawScrollBar(GuiGraphics guiGraphics, int panelX, int panelY, int panelWidth, int panelHeight, int listTop, int listHeight) {
-        int maxScroll = getMaxScroll();
-        if (maxScroll <= 0) {
+        ScrollBarBounds scrollBar = getScrollBarBounds(panelX, panelWidth, listTop, listHeight);
+        if (scrollBar == null) {
             return;
         }
 
-        int trackX = panelX + panelWidth - 10;
-        int trackY = listTop;
-        int trackHeight = listHeight;
-        int thumbHeight = Math.max(18, trackHeight * trackHeight / Math.max(trackHeight, getContentHeight()));
-        int thumbY = trackY + (trackHeight - thumbHeight) * scrollOffset / maxScroll;
-        guiGraphics.fill(trackX, trackY, trackX + 3, trackY + trackHeight, 0xFF252525);
-        guiGraphics.fill(trackX, thumbY, trackX + 3, thumbY + thumbHeight, 0xFF6F7DFF);
+        guiGraphics.fill(scrollBar.trackX(), scrollBar.trackY(), scrollBar.trackX() + scrollBar.trackWidth(), scrollBar.trackY() + scrollBar.trackHeight(), 0xFF252525);
+        guiGraphics.fill(scrollBar.trackX(), scrollBar.thumbY(), scrollBar.trackX() + scrollBar.trackWidth(), scrollBar.thumbY() + scrollBar.thumbHeight(), draggingScrollBar ? 0xFF9AA4FF : 0xFF6F7DFF);
     }
 
     /**
@@ -188,6 +185,20 @@ public class MissingNestedCraftingMaterialsScreen extends Screen {
             int panelHeight = getPanelHeight();
             int panelX = (width - panelWidth) / 2;
             int panelY = (height - panelHeight) / 2;
+            int listTop = panelY + HEADER_HEIGHT;
+            int listHeight = panelHeight - HEADER_HEIGHT - FOOTER_HEIGHT;
+            ScrollBarBounds scrollBar = getScrollBarBounds(panelX, panelWidth, listTop, listHeight);
+            if (scrollBar != null && isInside(mouseX, mouseY, scrollBar.trackX() - 3, scrollBar.trackY(), scrollBar.trackWidth() + 6, scrollBar.trackHeight())) {
+                draggingScrollBar = true;
+                if (isInside(mouseX, mouseY, scrollBar.trackX() - 3, scrollBar.thumbY(), scrollBar.trackWidth() + 6, scrollBar.thumbHeight())) {
+                    scrollDragOffsetY = (int) mouseY - scrollBar.thumbY();
+                } else {
+                    scrollDragOffsetY = scrollBar.thumbHeight() / 2;
+                    updateScrollFromThumbY((int) mouseY - scrollDragOffsetY, scrollBar);
+                }
+                return true;
+            }
+
             int buttonWidth = 84;
             int buttonHeight = 20;
             int buttonX = panelX + panelWidth / 2 - buttonWidth / 2;
@@ -198,6 +209,31 @@ public class MissingNestedCraftingMaterialsScreen extends Screen {
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (button == 0 && draggingScrollBar) {
+            int panelWidth = getPanelWidth();
+            int panelHeight = getPanelHeight();
+            int panelX = (width - panelWidth) / 2;
+            int panelY = (height - panelHeight) / 2;
+            ScrollBarBounds scrollBar = getScrollBarBounds(panelX, panelWidth, panelY + HEADER_HEIGHT, panelHeight - HEADER_HEIGHT - FOOTER_HEIGHT);
+            if (scrollBar != null) {
+                updateScrollFromThumbY((int) mouseY - scrollDragOffsetY, scrollBar);
+            }
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0 && draggingScrollBar) {
+            draggingScrollBar = false;
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     /**
@@ -251,6 +287,33 @@ public class MissingNestedCraftingMaterialsScreen extends Screen {
         return Math.max(0, getContentHeight() - listHeight);
     }
 
+    private ScrollBarBounds getScrollBarBounds(int panelX, int panelWidth, int listTop, int listHeight) {
+        int maxScroll = getMaxScroll();
+        if (maxScroll <= 0) {
+            return null;
+        }
+
+        int trackX = panelX + panelWidth - 10;
+        int trackY = listTop;
+        int trackWidth = 3;
+        int trackHeight = listHeight;
+        int thumbHeight = Math.max(18, trackHeight * trackHeight / Math.max(trackHeight, getContentHeight()));
+        int thumbY = trackY + (trackHeight - thumbHeight) * scrollOffset / maxScroll;
+        return new ScrollBarBounds(trackX, trackY, trackWidth, trackHeight, thumbY, thumbHeight);
+    }
+
+    private void updateScrollFromThumbY(int thumbY, ScrollBarBounds scrollBar) {
+        int maxThumbTravel = scrollBar.trackHeight() - scrollBar.thumbHeight();
+        if (maxThumbTravel <= 0) {
+            scrollOffset = 0;
+            return;
+        }
+
+        int clampedThumbY = Math.max(scrollBar.trackY(), Math.min(thumbY, scrollBar.trackY() + maxThumbTravel));
+        scrollOffset = (clampedThumbY - scrollBar.trackY()) * getMaxScroll() / maxThumbTravel;
+        clampScroll();
+    }
+
     /**
      * 将滚动位置限制在合法范围内。
      */
@@ -263,6 +326,9 @@ public class MissingNestedCraftingMaterialsScreen extends Screen {
      */
     private static boolean isInside(double mouseX, double mouseY, int x, int y, int buttonWidth, int buttonHeight) {
         return mouseX >= x && mouseX < x + buttonWidth && mouseY >= y && mouseY < y + buttonHeight;
+    }
+
+    private record ScrollBarBounds(int trackX, int trackY, int trackWidth, int trackHeight, int thumbY, int thumbHeight) {
     }
 
     /**

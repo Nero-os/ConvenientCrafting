@@ -75,6 +75,7 @@ public class CraftHelperScreen extends Screen {
     private int currentPage = 0;
     private boolean onlyCraftable = false;
     private boolean searchFocused = false;
+    private boolean searchAllSelected = false;
     private String searchText = "";
     private List<RecipeGroup> allRecipeGroups = new ArrayList<>();
     private List<RecipeGroup> sortedRecipeGroups = new ArrayList<>();
@@ -359,6 +360,14 @@ public class CraftHelperScreen extends Screen {
         if (group.recipes().isEmpty()) {
             return null;
         }
+
+        // 只要有任意变体可合成，就固定展示该变体，避免轮播切到缺料配方时按钮突然变灰。
+        for (RecipeEntry entry : group.recipes()) {
+            if (canCraftEntry(entry)) {
+                return entry;
+            }
+        }
+
         int activeIndex = (int) ((System.currentTimeMillis() / RECIPE_VARIANT_INTERVAL_MS) % group.recipes().size());
         return group.recipes().get(activeIndex);
     }
@@ -959,8 +968,12 @@ public class CraftHelperScreen extends Screen {
             if (font.width(visibleText) > textWidth) {
                 visibleText = font.plainSubstrByWidth(visibleText, textWidth);
             }
+            if (searchFocused && searchAllSelected && !visibleText.isEmpty()) {
+                int selectionWidth = Math.min(font.width(visibleText), textWidth);
+                guiGraphics.fill(searchX + 4, controlsY + 5, searchX + 5 + selectionWidth, controlsY + 15, 0xAA4F6CFF);
+            }
             guiGraphics.drawString(font, visibleText, searchX + 5, controlsY + 6, 0xFFFFFFFF, false);
-            if (searchFocused && (System.currentTimeMillis() / 500L) % 2L == 0L) {
+            if (searchFocused && !searchAllSelected && (System.currentTimeMillis() / 500L) % 2L == 0L) {
                 int cursorX = searchX + 5 + font.width(visibleText);
                 guiGraphics.fill(cursorX, controlsY + 5, cursorX + 1, controlsY + 15, 0xFFFFFFFF);
             }
@@ -1023,11 +1036,9 @@ public class CraftHelperScreen extends Screen {
 
         if (button == 1 && isInside(mouseX, mouseY, searchX, controlsY + 1, searchWidth, 18)) {
             searchFocused = true;
+            searchAllSelected = false;
             if (!searchText.isEmpty()) {
-                searchText = "";
-                currentPage = 0;
-                sortRecipes();
-                refreshButtons();
+                updateSearchText("");
             }
             return true;
         }
@@ -1046,9 +1057,11 @@ public class CraftHelperScreen extends Screen {
 
         if (isInside(mouseX, mouseY, searchX, controlsY + 1, searchWidth, 18)) {
             searchFocused = true;
+            searchAllSelected = false;
             return true;
         }
         searchFocused = false;
+        searchAllSelected = false;
 
         int totalPages = getTotalPages();
         if (totalPages > 1 && isInside(mouseX, mouseY, panelX + 16, panelY + panelHeight - 34, 34, 20) && turnPage(-1)) {
@@ -1237,22 +1250,45 @@ public class CraftHelperScreen extends Screen {
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (searchFocused) {
+            if (Screen.isSelectAll(keyCode)) {
+                searchAllSelected = !searchText.isEmpty();
+                return true;
+            }
+            if (Screen.isCopy(keyCode)) {
+                if (searchAllSelected && !searchText.isEmpty()) {
+                    Minecraft.getInstance().keyboardHandler.setClipboard(searchText);
+                }
+                return true;
+            }
+            if (Screen.isCut(keyCode)) {
+                if (searchAllSelected && !searchText.isEmpty()) {
+                    Minecraft.getInstance().keyboardHandler.setClipboard(searchText);
+                    updateSearchText("");
+                }
+                return true;
+            }
+            if (Screen.isPaste(keyCode)) {
+                String clipboard = Minecraft.getInstance().keyboardHandler.getClipboard();
+                if (!clipboard.isEmpty()) {
+                    replaceSelectionOrAppendSearchText(sanitizeSearchInput(clipboard));
+                }
+                return true;
+            }
+            if (searchAllSelected && (keyCode == 259 || keyCode == 261)) { // Backspace or Delete
+                updateSearchText("");
+                return true;
+            }
             if (keyCode == 259 && !searchText.isEmpty()) { // Backspace
-                searchText = searchText.substring(0, searchText.length() - 1);
-                currentPage = 0;
-                sortRecipes();
-                refreshButtons();
+                updateSearchText(searchText.substring(0, searchText.length() - 1));
                 return true;
             }
             if (keyCode == 261 && !searchText.isEmpty()) { // Delete
-                searchText = "";
-                currentPage = 0;
-                sortRecipes();
-                refreshButtons();
+                updateSearchText("");
                 return true;
             }
             if (keyCode == 257 || keyCode == 256) { // Enter or ESC
                 searchFocused = false;
+                searchAllSelected = false;
                 return true;
             }
         }
@@ -1281,10 +1317,34 @@ public class CraftHelperScreen extends Screen {
             return super.charTyped(codePoint, modifiers);
         }
 
-        searchText += codePoint;
+        replaceSelectionOrAppendSearchText(String.valueOf(codePoint));
+        return true;
+    }
+
+    private void replaceSelectionOrAppendSearchText(String text) {
+        if (text.isEmpty()) {
+            return;
+        }
+
+        updateSearchText(searchAllSelected ? text : searchText + text);
+    }
+
+    private String sanitizeSearchInput(String text) {
+        StringBuilder sanitized = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char character = text.charAt(i);
+            if (!Character.isISOControl(character)) {
+                sanitized.append(character);
+            }
+        }
+        return sanitized.toString();
+    }
+
+    private void updateSearchText(String text) {
+        searchText = text;
+        searchAllSelected = false;
         currentPage = 0;
         sortRecipes();
         refreshButtons();
-        return true;
     }
 }
