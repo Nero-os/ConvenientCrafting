@@ -34,7 +34,6 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.*;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
 /**
  * 合成助手界面。
@@ -66,6 +65,13 @@ public class CraftHelperScreen extends Screen {
     private static final long INGREDIENT_ALTERNATIVE_INTERVAL_MS = 900L;
     private static final long RECIPE_VARIANT_INTERVAL_MS = 1800L;
     private static final int RECIPE_LOAD_BATCH_SIZE = 100;
+    private static final int BACKGROUND_RECIPE_LOAD_BATCH_SIZE = 20;
+    private static final int CRAFTABILITY_REFRESH_BATCH_SIZE = 12;
+    private static Object cachedRecipeManager;
+    private static int cachedRecipeCount = -1;
+    private static int cachedUnlockRevision = -1;
+    private static List<RecipeGroup> cachedRecipeGroups = List.of();
+    private static CraftHelperScreen backgroundIndexBuilder;
 
     private int panelX;
     private int panelY;
@@ -79,12 +85,20 @@ public class CraftHelperScreen extends Screen {
     private boolean searchAllSelected = false;
     private String searchText = "";
     private List<RecipeGroup> allRecipeGroups = new ArrayList<>();
+    private List<RecipeGroup> viewRecipeGroups = new ArrayList<>();
     private List<RecipeGroup> sortedRecipeGroups = new ArrayList<>();
+    private int filteredRecipeCount;
+    private int filteredCraftableGroupCount;
     private final List<ItemStack> cachedAvailableMaterials = new ArrayList<>();
     private final Map<ResourceLocation, Boolean> cachedCraftableRecipes = new HashMap<>();
     private final List<RecipeHolder<?>> pendingRecipeLoad = new ArrayList<>();
     private final Set<String> pendingDuplicateRecipes = new HashSet<>();
     private final Map<String, List<RecipeEntry>> pendingGroupedRecipes = new LinkedHashMap<>();
+    private final List<RecipeEntry> pendingCraftabilityRefresh = new ArrayList<>();
+    private final boolean backgroundIndexBuild;
+    private Object loadingRecipeManager;
+    private int loadingRecipeCount = -1;
+    private int loadingUnlockRevision = -1;
     private int loadedRecipeCount;
     private int totalRecipeLoadCount;
     private boolean recipesLoading;
@@ -100,7 +114,54 @@ public class CraftHelperScreen extends Screen {
      * 创建合成助手界面。
      */
     public CraftHelperScreen() {
+        this(false);
+    }
+
+    private CraftHelperScreen(boolean backgroundIndexBuild) {
         super(Component.translatable("gui.convenientcrafting.craft_helper"));
+        this.backgroundIndexBuild = backgroundIndexBuild;
+    }
+
+    public static void preloadRecipeIndex() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null || isRecipeIndexCacheValid(mc)) {
+            return;
+        }
+        if (backgroundIndexBuilder != null && backgroundIndexBuilder.isLoadingForCurrentRecipeIndex(mc)) {
+            return;
+        }
+
+        backgroundIndexBuilder = new CraftHelperScreen(true);
+        backgroundIndexBuilder.startRecipeLoading();
+    }
+
+    public static void tickRecipeIndexPreload() {
+        if (backgroundIndexBuilder == null) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) {
+            backgroundIndexBuilder = null;
+            return;
+        }
+
+        backgroundIndexBuilder.continueRecipeLoading();
+        if (!backgroundIndexBuilder.recipesLoading) {
+            backgroundIndexBuilder = null;
+        }
+    }
+
+    public static void stopBackgroundRecipeWork() {
+        backgroundIndexBuilder = null;
+    }
+
+    public static void clearRecipeIndexCache() {
+        stopBackgroundRecipeWork();
+        cachedRecipeManager = null;
+        cachedRecipeCount = -1;
+        cachedUnlockRevision = -1;
+        cachedRecipeGroups = List.of();
     }
 
     /**
@@ -170,11 +231,13 @@ public class CraftHelperScreen extends Screen {
 
     private void startRecipeLoading() {
         allRecipeGroups.clear();
+        viewRecipeGroups.clear();
         sortedRecipeGroups.clear();
         cachedCraftableRecipes.clear();
         pendingRecipeLoad.clear();
         pendingDuplicateRecipes.clear();
         pendingGroupedRecipes.clear();
+        pendingCraftabilityRefresh.clear();
         loadedRecipeCount = 0;
         totalRecipeLoadCount = 0;
         recipesLoading = false;
@@ -182,15 +245,60 @@ public class CraftHelperScreen extends Screen {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
 
+        if (tryUseCachedRecipeIndex(mc)) {
+            return;
+        }
+
+        if (!backgroundIndexBuild && backgroundIndexBuilder != null && backgroundIndexBuilder.isLoadingForCurrentRecipeIndex(mc)) {
+            syncFromBackgroundIndexBuilder();
+            return;
+        }
+
         pendingRecipeLoad.addAll(mc.level.getRecipeManager().getRecipes());
         totalRecipeLoadCount = pendingRecipeLoad.size();
+        loadingRecipeManager = mc.level.getRecipeManager();
+        loadingRecipeCount = totalRecipeLoadCount;
+        loadingUnlockRevision = ClientRecipeUnlocks.getRevision();
         recipesLoading = true;
+    }
+
+    private boolean tryUseCachedRecipeIndex(Minecraft mc) {
+        if (!isRecipeIndexCacheValid(mc)) {
+            return false;
+        }
+
+        allRecipeGroups = new ArrayList<>(cachedRecipeGroups);
+        recipesLoading = false;
+        loadedRecipeCount = totalRecipeLoadCount = cachedRecipeCount;
+        initializeRecipeViewQuickly();
+        startCraftabilityRefresh();
+        refreshButtons();
+        return true;
+    }
+
+    private static boolean isRecipeIndexCacheValid(Minecraft mc) {
+        var recipeManager = mc.level.getRecipeManager();
+        return cachedRecipeManager == recipeManager
+                && cachedRecipeCount == recipeManager.getRecipes().size()
+                && cachedUnlockRevision == ClientRecipeUnlocks.getRevision();
     }
 
     @Override
     public void tick() {
         super.tick();
+        if (!backgroundIndexBuild && recipesLoading && backgroundIndexBuilder != null) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level != null && backgroundIndexBuilder.isLoadingForCurrentRecipeIndex(mc)) {
+                tickRecipeIndexPreload();
+                if (tryUseCachedRecipeIndex(mc)) {
+                    return;
+                }
+                syncFromBackgroundIndexBuilder();
+                return;
+            }
+        }
         continueRecipeLoading();
+        continueCraftabilityRefresh();
     }
 
     private void continueRecipeLoading() {
@@ -204,8 +312,9 @@ public class CraftHelperScreen extends Screen {
             return;
         }
 
+        int loadBatchSize = backgroundIndexBuild ? BACKGROUND_RECIPE_LOAD_BATCH_SIZE : RECIPE_LOAD_BATCH_SIZE;
         int processed = 0;
-        while (processed < RECIPE_LOAD_BATCH_SIZE && !pendingRecipeLoad.isEmpty()) {
+        while (processed < loadBatchSize && !pendingRecipeLoad.isEmpty()) {
             processRecipeForLoading(pendingRecipeLoad.remove(pendingRecipeLoad.size() - 1));
             processed++;
             loadedRecipeCount++;
@@ -217,9 +326,44 @@ public class CraftHelperScreen extends Screen {
             pendingGroupedRecipes.clear();
             pendingDuplicateRecipes.clear();
             recipesLoading = false;
-            sortRecipes();
+            storeRecipeIndexCache(mc);
+            if (backgroundIndexBuild) {
+                return;
+            }
+
+            initializeRecipeViewQuickly();
+            startCraftabilityRefresh();
             refreshButtons();
         }
+    }
+
+    private boolean isLoadingForCurrentRecipeIndex(Minecraft mc) {
+        return recipesLoading
+                && loadingRecipeManager == mc.level.getRecipeManager()
+                && loadingRecipeCount == mc.level.getRecipeManager().getRecipes().size()
+                && loadingUnlockRevision == ClientRecipeUnlocks.getRevision();
+    }
+
+    private void syncFromBackgroundIndexBuilder() {
+        loadedRecipeCount = backgroundIndexBuilder.loadedRecipeCount;
+        totalRecipeLoadCount = backgroundIndexBuilder.totalRecipeLoadCount;
+        recipesLoading = backgroundIndexBuilder.recipesLoading;
+    }
+
+    private void storeRecipeIndexCache(Minecraft mc) {
+        var recipeManager = mc.level.getRecipeManager();
+        cachedRecipeManager = recipeManager;
+        cachedRecipeCount = recipeManager.getRecipes().size();
+        cachedUnlockRevision = ClientRecipeUnlocks.getRevision();
+        cachedRecipeGroups = copyRecipeGroups(allRecipeGroups);
+    }
+
+    private static List<RecipeGroup> copyRecipeGroups(List<RecipeGroup> source) {
+        List<RecipeGroup> copy = new ArrayList<>(source.size());
+        for (RecipeGroup group : source) {
+            copy.add(new RecipeGroup(group.resultKey(), List.copyOf(group.recipes())));
+        }
+        return copy;
     }
 
     private void processRecipeForLoading(RecipeHolder<?> holder) {
@@ -352,50 +496,135 @@ public class CraftHelperScreen extends Screen {
      * 最后使用产物名称做稳定兜底排序。可合成状态会预先缓存，避免排序比较器反复扫描背包。</p>
      */
     private void sortRecipes() {
-        // 预先计算每个配方当前是否能合成
-        cachedCraftableRecipes.clear();
+        sortRecipes(true);
+    }
+
+    private void sortRecipes(boolean refreshCraftability) {
+        if (refreshCraftability) {
+            startCraftabilityRefresh();
+        }
+
+        rebuildRecipeView();
+        clampCurrentPage();
+        materializeCurrentPage();
+        refreshCurrentPageCraftability();
+    }
+
+    private void initializeRecipeViewQuickly() {
+        viewRecipeGroups = new ArrayList<>(allRecipeGroups);
+        filteredRecipeCount = viewRecipeGroups.size();
+        clampCurrentPage();
+        materializeCurrentPage();
+        refreshCurrentPageCraftability();
+        filteredCraftableGroupCount = countCraftableGroupsInView();
+    }
+
+    private void rebuildRecipeView() {
+        List<RecipeGroup> nextView = new ArrayList<>();
+        int nextCraftableCount = 0;
         for (RecipeGroup group : allRecipeGroups) {
-            for (RecipeEntry entry : group.recipes()) {
-                cachedCraftableRecipes.put(entry.id(), canCraftEntry(entry));
+            if (matchesFilters(group, cachedCraftableRecipes)) {
+                nextView.add(group);
+                if (canCraftAnyRecipe(group, cachedCraftableRecipes)) {
+                    nextCraftableCount++;
+                }
             }
         }
 
-        sortedRecipeGroups = allRecipeGroups.stream()
-                .filter(group -> matchesFilters(group, cachedCraftableRecipes))
-                .sorted((a, b) -> {
-                    Minecraft mc = Minecraft.getInstance();
-                    if (mc.level == null) return 0;
+        nextView.sort(this::compareRecipeGroups);
+        viewRecipeGroups = nextView;
+        filteredRecipeCount = viewRecipeGroups.size();
+        filteredCraftableGroupCount = nextCraftableCount;
+    }
 
-                    ItemStack resultA = getEntryResult(getFirstRecipe(a));
-                    ItemStack resultB = getEntryResult(getFirstRecipe(b));
+    private int countCraftableGroupsInView() {
+        int count = 0;
+        for (RecipeGroup group : viewRecipeGroups) {
+            if (canCraftAnyRecipe(group, cachedCraftableRecipes)) {
+                count++;
+            }
+        }
+        return count;
+    }
 
-                    boolean canCraftA = canCraftAnyRecipe(a, cachedCraftableRecipes);
-                    boolean canCraftB = canCraftAnyRecipe(b, cachedCraftableRecipes);
-
-                    // 规则 1：可合成配方优先展示，玩家打开面板后能立刻看到可执行操作。
-                    if (canCraftA != canCraftB) {
-                        return canCraftA ? -1 : 1;
-                    }
-
-                    // 规则 2：已有产物越多，说明玩家更可能在补充同类物品，因此按数量降序。
-                    int countA = cachedInventoryCounts.getOrDefault(buildItemKey(resultA), 0);
-                    int countB = cachedInventoryCounts.getOrDefault(buildItemKey(resultB), 0);
-                    if (countA != countB) {
-                        return Integer.compare(countB, countA);
-                    }
-
-                    // 规则 3：前两项都相同则按名称排序，保证列表顺序稳定。
-                    String nameA = resultA.getHoverName().getString();
-                    String nameB = resultB.getHoverName().getString();
-                    return nameA.compareToIgnoreCase(nameB);
-                })
-                .collect(Collectors.toList());
-
+    private void clampCurrentPage() {
         int totalPages = getTotalPages();
         if (totalPages == 0) {
             currentPage = 0;
         } else if (currentPage >= totalPages) {
             currentPage = totalPages - 1;
+        }
+    }
+
+    private void materializeCurrentPage() {
+        int pageStart = currentPage * recipesPerPage;
+        int pageEnd = pageStart + recipesPerPage;
+        if (viewRecipeGroups.isEmpty() || pageStart >= viewRecipeGroups.size() || pageEnd <= 0) {
+            sortedRecipeGroups = List.of();
+            return;
+        }
+
+        sortedRecipeGroups = new ArrayList<>(viewRecipeGroups.subList(pageStart, Math.min(pageEnd, viewRecipeGroups.size())));
+    }
+
+    private int compareRecipeGroups(RecipeGroup a, RecipeGroup b) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return 0;
+
+        ItemStack resultA = getEntryResult(getFirstRecipe(a));
+        ItemStack resultB = getEntryResult(getFirstRecipe(b));
+
+        boolean canCraftA = canCraftAnyRecipe(a, cachedCraftableRecipes);
+        boolean canCraftB = canCraftAnyRecipe(b, cachedCraftableRecipes);
+        if (canCraftA != canCraftB) {
+            return canCraftA ? -1 : 1;
+        }
+
+        int countA = cachedInventoryCounts.getOrDefault(buildItemKey(resultA), 0);
+        int countB = cachedInventoryCounts.getOrDefault(buildItemKey(resultB), 0);
+        if (countA != countB) {
+            return Integer.compare(countB, countA);
+        }
+
+        String nameA = resultA.getHoverName().getString();
+        String nameB = resultB.getHoverName().getString();
+        return nameA.compareToIgnoreCase(nameB);
+    }
+
+    private void startCraftabilityRefresh() {
+        pendingCraftabilityRefresh.clear();
+        for (RecipeGroup group : allRecipeGroups) {
+            pendingCraftabilityRefresh.addAll(group.recipes());
+        }
+    }
+
+    private void continueCraftabilityRefresh() {
+        if (pendingCraftabilityRefresh.isEmpty() || recipesLoading) {
+            return;
+        }
+
+        int processed = 0;
+        while (processed < CRAFTABILITY_REFRESH_BATCH_SIZE && !pendingCraftabilityRefresh.isEmpty()) {
+            RecipeEntry entry = pendingCraftabilityRefresh.remove(pendingCraftabilityRefresh.size() - 1);
+            cachedCraftableRecipes.put(entry.id(), canCraftEntry(entry));
+            processed++;
+        }
+
+        if (pendingCraftabilityRefresh.isEmpty()) {
+            filteredCraftableGroupCount = countCraftableGroupsInView();
+            refreshButtons();
+        }
+    }
+
+    private void refreshCurrentPageCraftability() {
+        if (sortedRecipeGroups.isEmpty()) {
+            return;
+        }
+
+        for (RecipeGroup group : sortedRecipeGroups) {
+            for (RecipeEntry entry : group.recipes()) {
+                cachedCraftableRecipes.put(entry.id(), canCraftEntry(entry));
+            }
         }
     }
 
@@ -453,7 +682,6 @@ public class CraftHelperScreen extends Screen {
             return null;
         }
 
-        // 只要有任意变体可合成，就固定展示该变体，避免轮播切到缺料配方时按钮突然变灰。
         for (RecipeEntry entry : group.recipes()) {
             if (isCraftableCached(entry)) {
                 return entry;
@@ -464,11 +692,6 @@ public class CraftHelperScreen extends Screen {
         return group.recipes().get(activeIndex);
     }
 
-    /**
-     * 刷新界面按钮。
-     *
-     * <p>当前面板按钮由渲染方法手绘，因此这里主要清理原生小部件列表。</p>
-     */
     private void refreshButtons() {
         clearWidgets();
     }
@@ -485,12 +708,12 @@ public class CraftHelperScreen extends Screen {
         return canCraftRecipe(entry.recipe());
     }
 
-    private boolean canClickCraftButton(RecipeEntry entry) {
-        return isCraftableCached(entry) || canAttemptNestedCrafting(entry);
+    private boolean canAttemptNestedCrafting(RecipeEntry entry) {
+        return entry != null && !entry.isBrewing() && entry.recipe() != null && !getEntryResult(entry).isEmpty();
     }
 
-    private boolean canAttemptNestedCrafting(RecipeEntry entry) {
-        return hasAltDown() && entry != null && !entry.isBrewing() && entry.recipe() != null && !getEntryResult(entry).isEmpty();
+    private boolean isNestedCraftingRequested() {
+        return hasAltDown();
     }
 
     /**
@@ -560,6 +783,10 @@ public class CraftHelperScreen extends Screen {
      * @return 每个材料槽的第一个可匹配物品堆
      */
     private DisplayIngredient[] getIngredientStacks(RecipeEntry entry) {
+        if (entry == null) {
+            return new DisplayIngredient[0];
+        }
+
         if (entry.isBrewing()) {
             BrewingRecipeEntry brewing = entry.brewing();
             BrewingMatch match = findBrewingMatch(brewing);
@@ -645,6 +872,9 @@ public class CraftHelperScreen extends Screen {
     }
 
     private int getIngredientCount(RecipeEntry entry) {
+        if (entry == null) {
+            return 0;
+        }
         if (entry.isBrewing()) {
             return 4;
         }
@@ -739,13 +969,6 @@ public class CraftHelperScreen extends Screen {
         return new SmithingMatch(template, base, addition);
     }
 
-    /**
-     * 获取玩家背包和当前打开容器的可变快照。
-     *
-     * <p>快照顺序固定为玩家背包优先、当前容器其次，用来保持“优先使用背包材料”的行为。</p>
-     *
-     * @return 可用材料的非空物品堆副本列表
-     */
     private BrewingMatch findBrewingMatch(BrewingRecipeEntry recipe) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return null;
@@ -775,6 +998,13 @@ public class CraftHelperScreen extends Screen {
         return inputs.isEmpty() ? null : new BrewingMatch(inputs, ingredient);
     }
 
+    /**
+     * 获取玩家背包和当前打开容器的可变快照。
+     *
+     * <p>快照顺序固定为玩家背包优先、当前容器其次，用来保持“优先使用背包材料”的行为。</p>
+     *
+     * @return 可用材料的非空物品堆副本列表
+     */
     private List<ItemStack> getInventorySnapshot() {
         List<ItemStack> available = new ArrayList<>();
         if (!cachedAvailableMaterials.isEmpty()) {
@@ -901,46 +1131,28 @@ public class CraftHelperScreen extends Screen {
     private record RecipeGroup(String resultKey, List<RecipeEntry> recipes) {
     }
 
-    /**
-     * 渲染合成助手面板。
-     *
-     * @param guiGraphics 图形绘制上下文
-     * @param mouseX 鼠标 X 坐标
-     * @param mouseY 鼠标 Y 坐标
-     * @param partialTick 局部帧时间
-     */
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(guiGraphics, mouseX, mouseY, partialTick);
 
-        // 面板背景
         guiGraphics.fill(panelX, panelY - PANEL_TOP_EXTRA, panelX + panelWidth, panelY + panelHeight, 0xC0101010);
         guiGraphics.fill(panelX, panelY - PANEL_TOP_EXTRA, panelX + panelWidth, panelY - PANEL_TOP_EXTRA + 2, 0xFF4444FF);
         guiGraphics.fill(panelX, panelY + panelHeight - 2, panelX + panelWidth, panelY + panelHeight, 0xFF4444FF);
-
-        // 标题
         guiGraphics.drawString(font, title, panelX + 8, panelY + 2, 0xFFFFFF, false);
 
-        // 可合成数量统计
-        int craftableCount = 0;
-        for (RecipeGroup group : sortedRecipeGroups) {
-            if (canCraftAnyRecipe(group)) craftableCount++;
-        }
-        String summary = "可合成: " + craftableCount + "/" + sortedRecipeGroups.size();
+        String summary = "可合成: " + filteredCraftableGroupCount + "/" + filteredRecipeCount;
         guiGraphics.drawString(font, summary, panelX + panelWidth - font.width(summary) - 34, panelY + 2, 0x888888, false);
 
         drawFilterControls(guiGraphics);
 
-        // 页码
         int totalPages = getTotalPages();
         if (totalPages > 1) {
             String pageStr = (currentPage + 1) + "/" + totalPages;
             guiGraphics.drawString(font, pageStr, panelX + panelWidth / 2 - font.width(pageStr) / 2, panelY + panelHeight - NAVIGATION_HEIGHT, 0xAAAAAA, false);
         }
 
-        // 每个配方的条目
-        int startIndex = currentPage * recipesPerPage;
-        int endIndex = Math.min(startIndex + recipesPerPage, sortedRecipeGroups.size());
+        int startIndex = 0;
+        int endIndex = sortedRecipeGroups.size();
         ItemStack hoveredIngredient = ItemStack.EMPTY;
         ItemStack hoveredResult = ItemStack.EMPTY;
         int ingredientXOffset = getPageIngredientXOffset(startIndex, endIndex);
@@ -958,20 +1170,19 @@ public class CraftHelperScreen extends Screen {
             RecipeEntry entry = getActiveRecipe(group);
             ItemStack result = getEntryResult(entry);
 
-            int recipeY = getRecipeY(i - startIndex);
+            int recipeY = getRecipeY(i);
             boolean canCraft = isCraftableCached(entry);
             boolean canAttemptNested = canAttemptNestedCrafting(entry);
-            boolean canClickCraft = canCraft || canAttemptNested;
-            String craftButtonLabel = canAttemptNested && !canCraft ? "→" : canClickCraft ? ">" : "X";
+            boolean nestedRequested = isNestedCraftingRequested();
+            boolean canClickCraft = canCraft || nestedRequested && canAttemptNested;
+            String craftButtonLabel = nestedRequested && canAttemptNested && !canCraft ? "→" : canClickCraft ? ">" : "X";
 
-            // 产物图标
             if (!result.isEmpty() && isInside(mouseX, mouseY, panelX + RESULT_X_OFFSET, recipeY + 4, INGREDIENT_ICON_SIZE, INGREDIENT_ICON_SIZE)) {
                 hoveredResult = result;
             }
             guiGraphics.renderItem(result, panelX + RESULT_X_OFFSET, recipeY + 4);
             guiGraphics.renderItemDecorations(font, result, panelX + RESULT_X_OFFSET, recipeY + 4);
 
-            // 产物名称
             String resultName = result.getHoverName().getString();
             int resultNameWidth = ingredientXOffset - NAME_X_OFFSET - 10;
             if (font.width(resultName) > resultNameWidth) {
@@ -980,7 +1191,6 @@ public class CraftHelperScreen extends Screen {
             guiGraphics.drawString(font, resultName, panelX + NAME_X_OFFSET, recipeY + 4, canCraft ? 0xFFFFFF : 0x888888, false);
             guiGraphics.drawString(font, "x" + result.getCount(), panelX + NAME_X_OFFSET, recipeY + 16, 0xAAAAAA, false);
 
-            // 材料图标
             DisplayIngredient[] ingredients = getIngredientStacks(entry);
             int ingX = panelX + ingredientXOffset;
             int ingredientOffset = getIngredientScrollOffset(ingredients.length, getMaxIngredientCount(group), mouseX, mouseY, ingX, recipeY, ingredientWidth);
@@ -994,9 +1204,7 @@ public class CraftHelperScreen extends Screen {
                     if (visibleLeft < visibleRight && isInside(mouseX, mouseY, visibleLeft, recipeY + 6, visibleRight - visibleLeft, INGREDIENT_ICON_SIZE)) {
                         hoveredIngredient = ingredient.stack();
                     }
-
                     guiGraphics.renderItem(ingredient.stack(), itemX, recipeY + 6);
-                    // 缺失的材料上画红色半透明遮罩
                     if (!ingredient.available()) {
                         guiGraphics.fill(itemX, recipeY + 6, itemX + INGREDIENT_ICON_SIZE, recipeY + 6 + INGREDIENT_ICON_SIZE, 0x33FF0000);
                     }
@@ -1187,17 +1395,19 @@ public class CraftHelperScreen extends Screen {
             return true;
         }
 
-        int startIndex = currentPage * recipesPerPage;
-        int endIndex = Math.min(startIndex + recipesPerPage, sortedRecipeGroups.size());
+        int startIndex = 0;
+        int endIndex = sortedRecipeGroups.size();
         for (int i = startIndex; i < endIndex; i++) {
             RecipeGroup group = sortedRecipeGroups.get(i);
             RecipeEntry entry = getActiveRecipe(group);
-            int recipeY = getRecipeY(i - startIndex);
+            int recipeY = getRecipeY(i);
+            boolean nestedRequested = isNestedCraftingRequested();
 
-            if (isInside(mouseX, mouseY, panelX + craftButtonXOffset, recipeY + 6, 22, 20) && canClickCraftButton(entry)) {
+            if (isInside(mouseX, mouseY, panelX + craftButtonXOffset, recipeY + 6, 22, 20)
+                    && (isCraftableCached(entry) || nestedRequested && canAttemptNestedCrafting(entry))) {
                 playButtonClickSound();
                 int craftCount = hasShiftDown() ? CraftRecipePacket.MAX_BATCH_CRAFTS : 1;
-                PacketDistributor.sendToServer(new CraftRecipePacket(entry.id(), craftCount, hasAltDown()));
+                PacketDistributor.sendToServer(new CraftRecipePacket(entry.id(), craftCount, nestedRequested));
                 refreshInventoryCache();
                 sortRecipes();
                 refreshButtons();
@@ -1251,6 +1461,8 @@ public class CraftHelperScreen extends Screen {
         }
 
         currentPage = nextPage;
+        materializeCurrentPage();
+        refreshCurrentPageCraftability();
         refreshButtons();
         return true;
     }
@@ -1261,7 +1473,7 @@ public class CraftHelperScreen extends Screen {
      * @return 总页数
      */
     private int getTotalPages() {
-        return (sortedRecipeGroups.size() + recipesPerPage - 1) / recipesPerPage;
+        return (filteredRecipeCount + recipesPerPage - 1) / recipesPerPage;
     }
 
     /**
@@ -1453,3 +1665,4 @@ public class CraftHelperScreen extends Screen {
         refreshButtons();
     }
 }
+

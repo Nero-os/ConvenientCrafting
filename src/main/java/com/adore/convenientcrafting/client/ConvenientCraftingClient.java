@@ -26,6 +26,8 @@ import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.client.settings.KeyConflictContext;
@@ -43,8 +45,6 @@ import org.lwjgl.glfw.GLFW;
 @EventBusSubscriber(modid = ConvenientCrafting.MODID, value = Dist.CLIENT)
 public class ConvenientCraftingClient {
     private static final ResourceLocation FILLED_PROPERTY = ResourceLocation.withDefaultNamespace("filled");
-    private static final int INVENTORY_SCREEN_WIDTH = 176;
-    private static final int INVENTORY_SCREEN_HEIGHT = 166;
     private static final int PLAYER_INVENTORY_LAST_COLUMN_RIGHT = 168;
     private static final int PLAYER_INVENTORY_TOP = 84;
     private static final int SORT_BUTTON_SIZE = 12;
@@ -109,6 +109,28 @@ public class ConvenientCraftingClient {
         event.register(OPEN_CRAFT_HELPER_KEY.get());
     }
 
+    @SubscribeEvent
+    static void onClientTick(ClientTickEvent.Post event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) {
+            CraftHelperScreen.clearRecipeIndexCache();
+            return;
+        }
+
+        if (mc.screen != null) {
+            CraftHelperScreen.stopBackgroundRecipeWork();
+            return;
+        }
+
+        CraftHelperScreen.preloadRecipeIndex();
+        CraftHelperScreen.tickRecipeIndexPreload();
+    }
+
+    @SubscribeEvent
+    static void onClientLogout(ClientPlayerNetworkEvent.LoggingOut event) {
+        CraftHelperScreen.clearRecipeIndexCache();
+    }
+
     /**
      * 监听客户端按键输入并打开合成助手界面。
      *
@@ -154,8 +176,8 @@ public class ConvenientCraftingClient {
         Screen screen = event.getScreen();
 
         if (screen instanceof InventoryScreen inventoryScreen) {
-            int guiLeft = (inventoryScreen.width - INVENTORY_SCREEN_WIDTH) / 2;
-            int guiTop = (inventoryScreen.height - INVENTORY_SCREEN_HEIGHT) / 2;
+            int guiLeft = inventoryScreen.getGuiLeft();
+            int guiTop = inventoryScreen.getGuiTop();
             int x = guiLeft + PLAYER_INVENTORY_LAST_COLUMN_RIGHT - SORT_BUTTON_SIZE;
             int y = guiTop + PLAYER_INVENTORY_TOP - SORT_BUTTON_SIZE - 2;
 
@@ -191,11 +213,12 @@ public class ConvenientCraftingClient {
 
         @Override
         protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-            int border = isHoveredOrFocused() ? 0xFFFFFFFF : 0xFF6B6B6B;
-            int top = isHoveredOrFocused() ? 0xFFB8C6B3 : 0xFF8F9B8A;
-            int middle = isHoveredOrFocused() ? 0xFF5A6A56 : 0xFF3D493A;
+            boolean hovered = isHovered();
+            int border = hovered ? 0xFFFFFFFF : 0xFF6B6B6B;
+            int top = hovered ? 0xFFB8C6B3 : 0xFF8F9B8A;
+            int middle = hovered ? 0xFF5A6A56 : 0xFF3D493A;
             int shadow = 0xFF171A17;
-            int icon = isHoveredOrFocused() ? 0xFFFFFFFF : 0xFFE5E5E5;
+            int icon = hovered ? 0xFFFFFFFF : 0xFFE5E5E5;
             int iconShadow = 0xFF1F241F;
 
             int x = getX();

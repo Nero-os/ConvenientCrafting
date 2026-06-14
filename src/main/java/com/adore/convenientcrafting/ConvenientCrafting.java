@@ -26,7 +26,7 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 /**
- * Convenient Crafting 模组的公共入口类。
+ * Convenient Crafting 模组的公共入口类。TODO：配置文件、JEI搜索&快捷键、切石机配方、收纳袋shift显示内部
  *
  * <p>负责注册方块、物品、创造模式标签、配置项和客户端到服务端的数据包处理器。</p>
  */

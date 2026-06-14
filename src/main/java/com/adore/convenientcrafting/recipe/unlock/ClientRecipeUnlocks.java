@@ -14,6 +14,7 @@ public final class ClientRecipeUnlocks {
     private static final Set<String> UNLOCKED_RECIPE_TYPES = new HashSet<>();
     private static final Set<String> ENABLED_BUILTIN_RECIPE_TYPES = new HashSet<>();
     private static final Set<String> ENABLED_ADDITIONAL_RECIPE_TYPES = new HashSet<>();
+    private static int revision;
 
     private ClientRecipeUnlocks() {
     }
@@ -24,17 +25,11 @@ public final class ClientRecipeUnlocks {
      * @param recipeTypeIds 服务端同步的配方类型 ID
      */
     public static void setUnlockedRecipeTypes(Collection<String> recipeTypeIds) {
-        UNLOCKED_RECIPE_TYPES.clear();
-        recipeTypeIds.stream()
-                .map(value -> value.toLowerCase(Locale.ROOT))
-                .forEach(UNLOCKED_RECIPE_TYPES::add);
+        replaceSet(UNLOCKED_RECIPE_TYPES, recipeTypeIds);
     }
 
     public static void setEnabledBuiltinRecipeTypes(Collection<String> recipeTypeIds) {
-        ENABLED_BUILTIN_RECIPE_TYPES.clear();
-        recipeTypeIds.stream()
-                .map(value -> value.toLowerCase(Locale.ROOT))
-                .forEach(ENABLED_BUILTIN_RECIPE_TYPES::add);
+        replaceSet(ENABLED_BUILTIN_RECIPE_TYPES, recipeTypeIds);
     }
 
     /**
@@ -43,10 +38,25 @@ public final class ClientRecipeUnlocks {
      * @param recipeTypeIds 服务端额外启用的配方类型 ID
      */
     public static void setEnabledAdditionalRecipeTypes(Collection<String> recipeTypeIds) {
-        ENABLED_ADDITIONAL_RECIPE_TYPES.clear();
+        replaceSet(ENABLED_ADDITIONAL_RECIPE_TYPES, recipeTypeIds);
+    }
+
+    public static int getRevision() {
+        return revision;
+    }
+
+    private static void replaceSet(Set<String> target, Collection<String> recipeTypeIds) {
+        Set<String> normalized = new HashSet<>();
         recipeTypeIds.stream()
                 .map(value -> value.toLowerCase(Locale.ROOT))
-                .forEach(ENABLED_ADDITIONAL_RECIPE_TYPES::add);
+                .forEach(normalized::add);
+        if (target.equals(normalized)) {
+            return;
+        }
+
+        target.clear();
+        target.addAll(normalized);
+        revision++;
     }
 
     /**
