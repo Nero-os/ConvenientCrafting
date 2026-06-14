@@ -18,8 +18,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayList;
@@ -127,9 +127,53 @@ public final class RecipeUnlocks {
      * @param event 玩家 tick 事件
      */
     @SubscribeEvent
-    public void onPlayerTick(PlayerTickEvent.Post event) {
-        if (event.getEntity() instanceof ServerPlayer player && player.tickCount % 40 == 0) {
-            refreshUnlocks(player, true);
+    public void onItemPickup(ItemEntityPickupEvent.Post event) {
+        if (event.getPlayer() instanceof ServerPlayer player) {
+            ItemStack original = event.getOriginalStack();
+            ItemStack current = event.getCurrentStack();
+            if (!original.isEmpty() && current.getCount() < original.getCount()) {
+                unlockFromItem(player, original, true);
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public void onItemCrafted(PlayerEvent.ItemCraftedEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            unlockFromItem(player, event.getCrafting(), true);
+        }
+    }
+
+    public static void unlockFromItem(Player player, ItemStack stack, boolean notify) {
+        if (stack.isEmpty()) {
+            return;
+        }
+
+        ResourceLocation itemId = getItemId(stack.getItem());
+        if (itemId == null) {
+            return;
+        }
+
+        Map<ResourceLocation, List<ResourceLocation>> unlockRules = getUnlockRules();
+        Set<String> unlockedTypes = getUnlockedTypes(player);
+        boolean changed = false;
+
+        for (Map.Entry<ResourceLocation, List<ResourceLocation>> entry : unlockRules.entrySet()) {
+            String recipeTypeId = normalize(entry.getKey());
+            if (!unlockedTypes.contains(recipeTypeId) && entry.getValue().contains(itemId)) {
+                unlockedTypes.add(recipeTypeId);
+                changed = true;
+                if (notify) {
+                    sendUnlockMessage(player, entry.getKey(), stack);
+                }
+            }
+        }
+
+        if (changed) {
+            saveUnlockedTypes(player, unlockedTypes);
+            if (player instanceof ServerPlayer serverPlayer) {
+                syncToClient(serverPlayer);
+            }
         }
     }
 

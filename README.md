@@ -3,7 +3,7 @@
 <div align="center">
 
 ![Minecraft Version](https://img.shields.io/badge/Minecraft-1.21.1-brightgreen)
-![NeoForge](https://img.shields.io/badge/NeoForge-21.1.220-orange)
+![NeoForge](https://img.shields.io/badge/NeoForge-21.1.x-orange)
 ![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-red)
 
 **解决Minecraft背包管理中最烦人的问题——物品散乱和合成繁琐**
@@ -70,8 +70,10 @@
 
 ### 安装要求
 - **Minecraft**: 1.21.1
-- **Mod Loader**: NeoForge 21.1.220+
+- **Mod Loader**: NeoForge 21.1.x
 - **Java**: Java 21+
+
+多版本维护和移植检查清单见 [`VERSIONING.md`](VERSIONING.md)。当前发布包只声明支持已测试的 Minecraft 1.21.1。
 
 ### 安装步骤
 1. 确保已安装对应版本的 NeoForge

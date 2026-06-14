@@ -3,6 +3,7 @@ package com.adore.convenientcrafting.event;
 import java.util.UUID;
 
 import com.adore.convenientcrafting.item.CategorizedBagItem;
+import com.adore.convenientcrafting.recipe.unlock.RecipeUnlocks;
 
 import net.minecraft.stats.Stats;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -49,6 +50,7 @@ public class BagPickupEvents {
 
         player.take(itemEntity, inserted);
         player.awardStat(Stats.ITEM_PICKED_UP.get(pickedItem), inserted);
+        RecipeUnlocks.unlockFromItem(player, new ItemStack(pickedItem), true);
         player.getInventory().setChanged();
         if (pickedStack.isEmpty()) {
             // 全部装袋后阻止原版继续尝试拾取这个已经被清空的物品实体。
