@@ -3,7 +3,7 @@
   "category": "misc",
   "key": {
     "#": {
-      "tag": "convenientcrafting:seeds"
+      "tag": "convenientcrafting:minerals"
     },
     "B": {
       "item": "minecraft:bundle"
@@ -18,6 +18,6 @@
   ],
   "result": {
     "count": 1,
-    "id": "convenientcrafting:seed_bag"
+    "id": "convenientcrafting:mineral_bag"
   }
 }

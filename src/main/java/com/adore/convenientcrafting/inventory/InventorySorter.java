@@ -1,13 +1,19 @@
 package com.adore.convenientcrafting.inventory;
 
 import com.adore.convenientcrafting.item.CategorizedBagItem;
+import com.adore.convenientcrafting.registry.ModItems;
 
+import net.minecraft.core.NonNullList;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.PickaxeItem;
 import net.minecraft.world.item.SwordItem;
+import net.minecraft.world.item.crafting.CraftingRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 
@@ -26,6 +32,9 @@ public class InventorySorter {
     private static final int HOTBAR_END = 9;
     private static final int MAIN_INVENTORY_START = 9;
     private static final int MAIN_INVENTORY_END = PLAYER_INVENTORY_SIZE;
+    private static Object cachedRecipeManager;
+    private static int cachedRecipeCount = -1;
+    private static List<CompactionRule> cachedMineralCompactionRules = List.of();
 
     /**
      * 整理玩家背包。
@@ -64,6 +73,32 @@ public class InventorySorter {
      *
      * @param container 要整理的容器；为 {@code null} 时直接忽略
      */
+    public static void sortInventory(Inventory inventory, ServerPlayer player, boolean compactMaterials) {
+        if (inventory == null) return;
+        if (!compactMaterials || player == null) {
+            sortInventory(inventory);
+            return;
+        }
+
+        Map<String, StackBucket> itemCounts = new LinkedHashMap<>();
+        collectInventoryAndBagContents(itemCounts, inventory, PLAYER_INVENTORY_SIZE);
+        compactBuckets(itemCounts, findMineralCompactionRules(player));
+
+        for (int i = 0; i < PLAYER_INVENTORY_SIZE; i++) {
+            inventory.setItem(i, ItemStack.EMPTY);
+        }
+
+        distributeBuckets(inventory, itemCounts, true, PLAYER_INVENTORY_SIZE);
+        compactMatchingItemsIntoBags(inventory, PLAYER_INVENTORY_SIZE);
+
+        itemCounts.clear();
+        collectContainerContents(itemCounts, inventory, PLAYER_INVENTORY_SIZE);
+        for (int i = 0; i < PLAYER_INVENTORY_SIZE; i++) {
+            inventory.setItem(i, ItemStack.EMPTY);
+        }
+        distributeBuckets(inventory, itemCounts, true, PLAYER_INVENTORY_SIZE);
+    }
+
     public static void sortContainer(Container container) {
         if (container == null) return;
 
@@ -220,6 +255,136 @@ public class InventorySorter {
         }
     }
 
+    private static void distributeBuckets(Container container, Map<String, StackBucket> itemCounts, boolean isPlayerInventory, int sortableSlots) {
+        List<StackBucket> sortedItems = itemCounts.values().stream()
+                .sorted(InventorySorter::compareStacks)
+                .collect(Collectors.toList());
+        distributeItems(container, sortedItems, isPlayerInventory, sortableSlots);
+    }
+
+    private static void collectContainerContents(Map<String, StackBucket> itemCounts, Container container, int sortableSlots) {
+        for (int i = 0; i < sortableSlots; i++) {
+            ItemStack stack = container.getItem(i);
+            if (!stack.isEmpty()) {
+                addToBuckets(itemCounts, stack);
+            }
+        }
+    }
+
+    private static void collectInventoryAndBagContents(Map<String, StackBucket> itemCounts, Container container, int sortableSlots) {
+        for (int i = 0; i < sortableSlots; i++) {
+            ItemStack stack = container.getItem(i);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            if (stack.getItem() instanceof CategorizedBagItem) {
+                ItemStack emptiedBag = stack.copy();
+                CategorizedBagItem.setContents(emptiedBag, NonNullList.withSize(CategorizedBagItem.SLOT_COUNT, ItemStack.EMPTY));
+                addToBuckets(itemCounts, emptiedBag);
+                for (ItemStack contained : CategorizedBagItem.getContents(stack)) {
+                    if (!contained.isEmpty()) {
+                        addToBuckets(itemCounts, contained);
+                    }
+                }
+            } else {
+                addToBuckets(itemCounts, stack);
+            }
+        }
+    }
+
+    private static List<CompactionRule> findMineralCompactionRules(ServerPlayer player) {
+        var server = player.getServer();
+        if (server == null) {
+            return List.of();
+        }
+
+        var recipeManager = server.getRecipeManager();
+        var recipes = recipeManager.getRecipes();
+        if (recipeManager == cachedRecipeManager && recipes.size() == cachedRecipeCount) {
+            return cachedMineralCompactionRules;
+        }
+
+        List<CompactionRule> rules = new ArrayList<>();
+        for (RecipeHolder<?> holder : recipes) {
+            if (!(holder.value() instanceof CraftingRecipe craftingRecipe)) {
+                continue;
+            }
+
+            List<Ingredient> ingredients = craftingRecipe.getIngredients().stream()
+                    .filter(ingredient -> ingredient.getItems().length > 0)
+                    .toList();
+            if (ingredients.size() < 2) {
+                continue;
+            }
+
+            ItemStack result = craftingRecipe.getResultItem(server.registryAccess()).copy();
+            if (result.isEmpty() || result.getCount() != 1 || !result.is(ModItems.MINERALS)) {
+                continue;
+            }
+
+            for (ItemStack source : findRepeatedIngredientOptions(ingredients)) {
+                if (!source.isEmpty()
+                        && source.is(ModItems.MINERALS)
+                        && !ItemStack.isSameItemSameComponents(source, result)) {
+                    rules.add(new CompactionRule(source.copyWithCount(1), ingredients.size(), result.copyWithCount(1)));
+                }
+            }
+        }
+
+        rules.sort(Comparator.comparing(rule -> buildStackKey(rule.source())));
+        cachedRecipeManager = recipeManager;
+        cachedRecipeCount = recipes.size();
+        cachedMineralCompactionRules = List.copyOf(rules);
+        return cachedMineralCompactionRules;
+    }
+
+    private static List<ItemStack> findRepeatedIngredientOptions(List<Ingredient> ingredients) {
+        ItemStack[] firstOptions = ingredients.get(0).getItems();
+        if (firstOptions.length == 0) {
+            return List.of();
+        }
+
+        for (Ingredient ingredient : ingredients) {
+            ItemStack[] options = ingredient.getItems();
+            if (options.length != firstOptions.length) {
+                return List.of();
+            }
+            for (int i = 0; i < options.length; i++) {
+                if (!ItemStack.isSameItemSameComponents(firstOptions[i], options[i])) {
+                    return List.of();
+                }
+            }
+        }
+
+        List<ItemStack> candidates = new ArrayList<>();
+        for (ItemStack option : firstOptions) {
+            candidates.add(option.copyWithCount(1));
+        }
+        return candidates;
+    }
+
+    private static void compactBuckets(Map<String, StackBucket> buckets, List<CompactionRule> rules) {
+        boolean changed;
+        do {
+            changed = false;
+            for (CompactionRule rule : rules) {
+                String sourceKey = buildStackKey(rule.source());
+                StackBucket sourceBucket = buckets.get(sourceKey);
+                if (sourceBucket == null || sourceBucket.count < rule.sourceCount()) {
+                    continue;
+                }
+
+                int resultCount = sourceBucket.count / rule.sourceCount();
+                sourceBucket.count %= rule.sourceCount();
+                if (sourceBucket.count == 0) {
+                    buckets.remove(sourceKey);
+                }
+                addToBuckets(buckets, rule.result().copyWithCount(resultCount));
+                changed = true;
+            }
+        } while (changed);
+    }
+
     private static void compactMatchingItemsIntoBags(Container container, int sortableSlots) {
         List<BagSlot> bags = new ArrayList<>();
         for (int i = 0; i < sortableSlots; i++) {
@@ -278,5 +443,8 @@ public class InventorySorter {
     }
 
     private record BagSlot(int slotIndex, ItemStack stack) {
+    }
+
+    private record CompactionRule(ItemStack source, int sourceCount, ItemStack result) {
     }
 }

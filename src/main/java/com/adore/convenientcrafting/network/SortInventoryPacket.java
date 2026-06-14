@@ -68,7 +68,7 @@ public record SortInventoryPacket(boolean isContainer, boolean compactMaterials)
                     }
                 } else {
                     Inventory inventory = player.getInventory();
-                    InventorySorter.sortInventory(inventory);
+                    InventorySorter.sortInventory(inventory, player, message.compactMaterials());
                 }
 
                 player.containerMenu.broadcastChanges();

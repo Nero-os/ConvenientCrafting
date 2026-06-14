@@ -1,0 +1,6 @@
+{
+  "parent": "convenientcrafting:item/mineral_bag",
+  "textures": {
+    "layer0": "convenientcrafting:item/mineral_bag"
+  }
+}

@@ -87,6 +87,7 @@ public class ConvenientCraftingClient {
     private static void registerBagItemProperties() {
         ItemProperties.register(ModItems.SEED_BAG.get(), FILLED_PROPERTY, (stack, level, entity, seed) -> hasBagContents(stack) ? 1.0F : 0.0F);
         ItemProperties.register(ModItems.DYE_BAG.get(), FILLED_PROPERTY, (stack, level, entity, seed) -> hasBagContents(stack) ? 1.0F : 0.0F);
+        ItemProperties.register(ModItems.MINERAL_BAG.get(), FILLED_PROPERTY, (stack, level, entity, seed) -> hasBagContents(stack) ? 1.0F : 0.0F);
     }
 
     private static boolean hasBagContents(ItemStack stack) {

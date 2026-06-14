@@ -3,21 +3,22 @@
   "category": "misc",
   "key": {
     "#": {
-      "tag": "convenientcrafting:seeds"
-    },
-    "B": {
-      "item": "minecraft:bundle"
+      "tag": "convenientcrafting:minerals"
     },
     "L": {
       "item": "minecraft:leather"
+    },
+    "S": {
+      "item": "minecraft:string"
     }
   },
   "pattern": [
-    " B ",
-    "L#L"
+    " S ",
+    "L#L",
+    " L "
   ],
   "result": {
     "count": 1,
-    "id": "convenientcrafting:seed_bag"
+    "id": "convenientcrafting:mineral_bag"
   }
 }

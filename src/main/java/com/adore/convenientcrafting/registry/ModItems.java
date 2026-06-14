@@ -4,6 +4,9 @@ import com.adore.convenientcrafting.ConvenientCrafting;
 import com.adore.convenientcrafting.item.CategorizedBagItem;
 
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.component.ItemContainerContents;
 import net.neoforged.bus.api.IEventBus;
@@ -21,14 +24,24 @@ public final class ModItems {
      * 物品延迟注册器。
      */
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(ConvenientCrafting.MODID);
+    public static final TagKey<Item> SEEDS = TagKey.create(
+            Registries.ITEM,
+            ResourceLocation.fromNamespaceAndPath(ConvenientCrafting.MODID, "seeds"));
+    public static final TagKey<Item> MINERALS = TagKey.create(
+            Registries.ITEM,
+            ResourceLocation.fromNamespaceAndPath(ConvenientCrafting.MODID, "minerals"));
 
     public static final DeferredItem<Item> SEED_BAG = ITEMS.register(
             "seed_bag",
-            () -> new CategorizedBagItem(bagProperties(), Tags.Items.SEEDS));
+            () -> new CategorizedBagItem(bagProperties(), SEEDS));
 
     public static final DeferredItem<Item> DYE_BAG = ITEMS.register(
             "dye_bag",
             () -> new CategorizedBagItem(bagProperties(), Tags.Items.DYES));
+
+    public static final DeferredItem<Item> MINERAL_BAG = ITEMS.register(
+            "mineral_bag",
+            () -> new CategorizedBagItem(bagProperties(), MINERALS));
 
     private ModItems() {
     }

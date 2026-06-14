@@ -1,0 +1,14 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "convenientcrafting:item/mineral_bag_empty"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "filled": 0.0000001
+      },
+      "model": "convenientcrafting:item/mineral_bag_filled"
+    }
+  ]
+}

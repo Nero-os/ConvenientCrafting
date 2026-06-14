@@ -34,6 +34,7 @@ public final class ModCreativeModeTabs {
                     .displayItems((parameters, output) -> {
                         output.accept(ModItems.SEED_BAG.get());
                         output.accept(ModItems.DYE_BAG.get());
+                        output.accept(ModItems.MINERAL_BAG.get());
                     })
                     .build());
 

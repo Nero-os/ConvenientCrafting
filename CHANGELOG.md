@@ -5,16 +5,28 @@
 ### Added
 
 - Added Seed Bag and Dye Bag items with vanilla-style item textures, empty/filled states, fullness bars, item models, localization, and creative tab entries.
+- Added Mineral Bag with the same storage, pickup, sorting, and convenient crafting behavior as Seed Bag and Dye Bag.
+- Added `convenientcrafting:minerals` item tag so modpacks can extend which ore and mineral items the Mineral Bag accepts.
 - Added leather/string and vanilla bundle upgrade crafting recipes for Seed Bag and Dye Bag.
+- Added leather/string and vanilla bundle upgrade crafting recipes for Mineral Bag.
 - Added category-limited 9-slot storage for Seed Bag and Dye Bag contents.
 - Added automatic pickup routing so matching seeds and dyes go into existing bags before normal inventory pickup.
 - Added support for using materials stored inside bags from the convenient crafting panel opened with `G`.
 - Added inventory sorting integration so matching loose items are packed into existing bags before sorting.
+- Added Alt inventory sorting support for compacting mineral nuggets, ingots, and blocks using standard repeated-material crafting recipes.
 - Added middle-click inventory sorting from the player inventory screen.
+- Added standard copy, paste, cut, select-all, and keyboard navigation support to the convenient crafting search box.
+- Added mouse-drag support for the nested missing-material tree scrollbar.
 
 ### Changed
 
 - Convenient crafting now treats bag contents as available materials for crafting, smithing, brewing, configured simple recipes, and nested crafting checks.
+- Convenient crafting now loads large recipe lists incrementally when opened, reducing freezes in large modpacks.
+- Convenient crafting now reuses cached material and craftability data while rendering recipe rows, reducing repeated inventory scans.
+- Alt inventory sorting now includes Mineral Bag contents in material compaction and then packs compacted mineral results back into available bag space.
+- Alt mineral compaction now caches detected repeated-material mineral recipes so large modpacks do not rescan every recipe on each sort.
+- Recipe type unlocks are now triggered when players obtain or craft workstation items instead of relying on periodic inventory scans.
+- Multi-recipe results now keep showing a craftable recipe variant when at least one variant can be crafted, preventing the craft button from flickering off during cycling.
 - Inventory sorting now preserves item component data, preventing container-like items such as bags from losing their stored contents during sorting.
 - Convenient Crafting creative tab now uses the Seed Bag as its icon and displays both bag items.
 - Inventory sort button now uses a compact custom icon-style button with a tooltip instead of a text glyph.
@@ -22,6 +34,9 @@
 ### Fixed
 
 - Fixed player inventory sorting writing tools and other items into armor or offhand slots.
+- Fixed workstation unlocks sometimes being missed when a player picked up and quickly dropped the workstation item.
+- Fixed convenient crafting search text editing missing common desktop-style operations.
+- Fixed nested missing-material scrollbar only responding to the mouse wheel.
 
 ## 1.3.0 - 2026-06-10
 

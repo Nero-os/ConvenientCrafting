@@ -2,6 +2,7 @@
   "itemGroup.convenientcrafting": "便捷合成",
   "item.convenientcrafting.seed_bag": "种子袋",
   "item.convenientcrafting.dye_bag": "染料袋",
+  "item.convenientcrafting.mineral_bag": "矿物袋",
   "item.convenientcrafting.bag.slots": "已用槽位：%s/%s",
   "convenientcrafting.configuration.title": "%s 配置",
   "convenientcrafting.configuration.section.convenientcrafting.common.toml": "%s 通用配置",

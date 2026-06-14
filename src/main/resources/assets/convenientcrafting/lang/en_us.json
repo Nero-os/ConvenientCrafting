@@ -2,6 +2,7 @@
   "itemGroup.convenientcrafting": "Convenient Crafting",
   "item.convenientcrafting.seed_bag": "Seed Bag",
   "item.convenientcrafting.dye_bag": "Dye Bag",
+  "item.convenientcrafting.mineral_bag": "Mineral Bag",
   "item.convenientcrafting.bag.slots": "%s/%s slots used",
   "convenientcrafting.configuration.title": "%s Configuration",
   "convenientcrafting.configuration.section.convenientcrafting.common.toml": "%s Common Config",
