@@ -23,8 +23,10 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -38,6 +40,46 @@ public final class RecipeUnlocks {
     private static final String UNLOCKED_TYPES_KEY = "UnlockedRecipeTypes";
 
     public RecipeUnlocks() {
+    }
+
+    public static boolean unlockRecipeType(ServerPlayer player, ResourceLocation recipeTypeId) {
+        Set<String> unlockedTypes = getUnlockedTypes(player);
+        boolean changed = unlockedTypes.add(normalize(recipeTypeId));
+        if (changed) {
+            saveUnlockedTypes(player, unlockedTypes);
+            syncToClient(player);
+        }
+        return changed;
+    }
+
+    public static int unlockRecipeTypes(ServerPlayer player, Collection<ResourceLocation> recipeTypeIds) {
+        Set<String> unlockedTypes = getUnlockedTypes(player);
+        int changedCount = 0;
+        for (ResourceLocation recipeTypeId : recipeTypeIds) {
+            if (unlockedTypes.add(normalize(recipeTypeId))) {
+                changedCount++;
+            }
+        }
+
+        if (changedCount > 0) {
+            saveUnlockedTypes(player, unlockedTypes);
+            syncToClient(player);
+        }
+        return changedCount;
+    }
+
+    public static List<ResourceLocation> getUnlockableRecipeTypeIds() {
+        Set<ResourceLocation> recipeTypeIds = new LinkedHashSet<>();
+        getEnabledBuiltinRecipeTypeIds().stream()
+                .map(ResourceLocation::tryParse)
+                .filter(id -> id != null)
+                .forEach(recipeTypeIds::add);
+        getEnabledAdditionalRecipeTypeIds().stream()
+                .map(ResourceLocation::tryParse)
+                .filter(id -> id != null)
+                .forEach(recipeTypeIds::add);
+        recipeTypeIds.addAll(getUnlockRules().keySet());
+        return List.copyOf(recipeTypeIds);
     }
 
     /**

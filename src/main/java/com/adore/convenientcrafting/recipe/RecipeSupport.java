@@ -94,6 +94,33 @@ public final class RecipeSupport {
                 && !getNonEmptyIngredients(recipe).isEmpty();
     }
 
+    public static boolean isConfiguredSimpleRecipeFor(Player player, Recipe<?> recipe, HolderLookup.Provider registries) {
+        ResourceLocation typeId = getRecipeTypeId(recipe);
+        return isAdditionalRecipeTypeEnabledFor(player, typeId)
+                && !recipe.getResultItem(registries).isEmpty()
+                && !getNonEmptyIngredients(recipe).isEmpty();
+    }
+
+    private static boolean isAdditionalRecipeTypeEnabledFor(Player player, ResourceLocation typeId) {
+        if (typeId == null || isBuiltInRecipeType(typeId)) {
+            return false;
+        }
+
+        String normalizedTypeId = typeId.toString().toLowerCase(Locale.ROOT);
+        if (player instanceof ServerPlayer) {
+            return RecipeUnlocks.isUnlocked(player, typeId)
+                    || Config.ADDITIONAL_RECIPE_TYPES.get().stream()
+                    .map(value -> value.toLowerCase(Locale.ROOT))
+                    .anyMatch(normalizedTypeId::equals);
+        }
+
+        return ClientRecipeUnlocks.isUnlocked(typeId)
+                || ClientRecipeUnlocks.isAdditionalRecipeTypeEnabled(typeId)
+                || Config.ADDITIONAL_RECIPE_TYPES.get().stream()
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .anyMatch(normalizedTypeId::equals);
+    }
+
     /**
      * 判断玩家是否可以使用该配方类型的便捷合成。
      *

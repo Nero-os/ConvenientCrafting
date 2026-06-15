@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.0 - 2026-06-15
+
+### Added
+
+- Added JEI-style advanced search syntax to the convenient crafting search box: mod filters with `@`, exclusions with `-`, quoted phrases, tooltip filters with `#`, item tag filters with `$`, creative tab filters with `%`, ingredient filters with `~`, and multi-search with `|`.
+- Added recipe-result and ingredient interactions in the convenient crafting list: hover an item and press `R`, or left-click it, to search for its recipes.
+- Added usage lookup interactions in the convenient crafting list: hover an item and press `U`, or right-click it, to search for recipes that use it as an ingredient.
+- Added search navigation history for recipe and usage lookups, allowing `Backspace` to return to the previous lookup when the search box is not focused.
+- Added administrator commands to unlock recipe types for players: `/convenientcrafting unlock <targets> all` and `/convenientcrafting unlock <targets> <recipe_type_id>`.
+
+### Changed
+
+- Recipe and usage lookup searches now automatically quote item names containing spaces so multi-word item names search correctly.
+- Refreshing or closing the convenient crafting panel now clears recipe and usage lookup history for the current panel session.
+- Creative-mode players can now craft any visible convenient crafting recipe directly without materials, with all recipe buttons shown as available.
+
 ## 1.4.0 - 2026-06-12
 
 ### Added

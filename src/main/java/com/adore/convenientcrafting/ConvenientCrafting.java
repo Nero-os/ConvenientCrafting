@@ -3,6 +3,7 @@ package com.adore.convenientcrafting;
 import org.slf4j.Logger;
 
 import com.adore.convenientcrafting.config.Config;
+import com.adore.convenientcrafting.command.RecipeUnlockCommands;
 import com.adore.convenientcrafting.event.BagPickupEvents;
 import com.adore.convenientcrafting.network.CraftRecipePacket;
 import com.adore.convenientcrafting.network.NestedCraftingMissingMaterialsPacket;
@@ -59,6 +60,7 @@ public class ConvenientCrafting {
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(new BagPickupEvents());
         NeoForge.EVENT_BUS.register(new RecipeUnlocks());
+        NeoForge.EVENT_BUS.register(new RecipeUnlockCommands());
 
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
     }

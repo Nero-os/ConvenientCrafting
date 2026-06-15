@@ -16,10 +16,14 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.FormattedText;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.alchemy.Potion;
 import net.minecraft.world.item.alchemy.PotionBrewing;
 import net.minecraft.world.item.alchemy.PotionContents;
@@ -30,6 +34,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.SmithingRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipeInput;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.*;
@@ -84,6 +89,8 @@ public class CraftHelperScreen extends Screen {
     private boolean searchFocused = false;
     private boolean searchAllSelected = false;
     private String searchText = "";
+    private ItemStack hoveredRecipeStack = ItemStack.EMPTY;
+    private final Deque<String> searchHistory = new ArrayDeque<>();
     private List<RecipeGroup> allRecipeGroups = new ArrayList<>();
     private List<RecipeGroup> viewRecipeGroups = new ArrayList<>();
     private List<RecipeGroup> sortedRecipeGroups = new ArrayList<>();
@@ -102,6 +109,7 @@ public class CraftHelperScreen extends Screen {
     private int loadedRecipeCount;
     private int totalRecipeLoadCount;
     private boolean recipesLoading;
+    private boolean creativeTabsBuilt;
 
     /**
      * 玩家背包快照缓存，用于排序评分。
@@ -241,6 +249,7 @@ public class CraftHelperScreen extends Screen {
         loadedRecipeCount = 0;
         totalRecipeLoadCount = 0;
         recipesLoading = false;
+        creativeTabsBuilt = false;
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
@@ -522,8 +531,9 @@ public class CraftHelperScreen extends Screen {
     private void rebuildRecipeView() {
         List<RecipeGroup> nextView = new ArrayList<>();
         int nextCraftableCount = 0;
+        SearchQuery searchQuery = parseSearchQuery(searchText.trim().toLowerCase(Locale.ROOT));
         for (RecipeGroup group : allRecipeGroups) {
-            if (matchesFilters(group, cachedCraftableRecipes)) {
+            if (matchesFilters(group, cachedCraftableRecipes, searchQuery)) {
                 nextView.add(group);
                 if (canCraftAnyRecipe(group, cachedCraftableRecipes)) {
                     nextCraftableCount++;
@@ -635,24 +645,306 @@ public class CraftHelperScreen extends Screen {
      * @param craftableCache 可合成状态缓存
      * @return 通过筛选时返回 {@code true}
      */
-    private boolean matchesFilters(RecipeGroup group, Map<ResourceLocation, Boolean> craftableCache) {
+    private boolean matchesFilters(RecipeGroup group, Map<ResourceLocation, Boolean> craftableCache, SearchQuery searchQuery) {
         if (onlyCraftable && !canCraftAnyRecipe(group, craftableCache)) {
             return false;
-        }
-
-        String query = searchText.trim().toLowerCase(Locale.ROOT);
-        if (query.isEmpty()) {
-            return true;
         }
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return false;
 
-        ItemStack result = getEntryResult(getFirstRecipe(group));
-        String itemName = result.getHoverName().getString().toLowerCase(Locale.ROOT);
-        ResourceLocation itemKey = BuiltInRegistries.ITEM.getKey(result.getItem());
-        String itemId = itemKey != null ? itemKey.toString().toLowerCase(Locale.ROOT) : "";
-        return itemName.contains(query) || itemId.contains(query);
+        return searchQuery.matches(new SearchContext(group));
+    }
+
+    private SearchQuery parseSearchQuery(String query) {
+        List<SearchGroup> groups = new ArrayList<>();
+        for (String groupText : splitSearchGroups(query)) {
+            SearchGroup group = parseSearchGroup(groupText);
+            if (!group.isEmpty()) {
+                groups.add(group);
+            }
+        }
+        return new SearchQuery(groups);
+    }
+
+    private List<String> splitSearchGroups(String query) {
+        List<String> groups = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < query.length(); i++) {
+            char character = query.charAt(i);
+            if (character == '"') {
+                quoted = !quoted;
+                current.append(character);
+            } else if (character == '|' && !quoted) {
+                groups.add(current.toString());
+                current.setLength(0);
+            } else {
+                current.append(character);
+            }
+        }
+        groups.add(current.toString());
+        return groups;
+    }
+
+    private SearchGroup parseSearchGroup(String groupText) {
+        SearchGroup group = new SearchGroup();
+        for (String token : splitSearchTerms(groupText)) {
+            SearchTerm term = parseSearchTerm(token);
+            if (term != null) {
+                group.add(term);
+            }
+        }
+        return group;
+    }
+
+    private List<String> splitSearchTerms(String groupText) {
+        List<String> terms = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < groupText.length(); i++) {
+            char character = groupText.charAt(i);
+            if (character == '"') {
+                quoted = !quoted;
+            } else if (Character.isWhitespace(character) && !quoted) {
+                addSearchTerm(terms, current);
+            } else {
+                current.append(character);
+            }
+        }
+        addSearchTerm(terms, current);
+        return terms;
+    }
+
+    private void addSearchTerm(List<String> terms, StringBuilder current) {
+        String term = current.toString().trim();
+        if (!term.isEmpty()) {
+            terms.add(term);
+        }
+        current.setLength(0);
+    }
+
+    private SearchTerm parseSearchTerm(String token) {
+        boolean excluded = token.startsWith("-") && token.length() > 1;
+        String value = excluded ? token.substring(1) : token;
+        SearchTarget target = SearchTarget.DEFAULT;
+        if (value.length() > 1) {
+            target = switch (value.charAt(0)) {
+                case '@' -> SearchTarget.MOD;
+                case '#' -> SearchTarget.TOOLTIP;
+                case '$' -> SearchTarget.TAG;
+                case '%' -> SearchTarget.CREATIVE_TAB;
+                case '~' -> SearchTarget.INGREDIENT;
+                default -> SearchTarget.DEFAULT;
+            };
+            if (target != SearchTarget.DEFAULT) {
+                value = value.substring(1);
+            }
+        }
+
+        value = value.trim();
+        return value.isEmpty() ? null : new SearchTerm(target, value, excluded);
+    }
+
+    private void ensureCreativeTabsBuilt() {
+        if (creativeTabsBuilt) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            return;
+        }
+
+        CreativeModeTabs.tryRebuildTabContents(
+                mc.level.enabledFeatures(),
+                mc.options.operatorItemsTab().get(),
+                mc.level.registryAccess()
+        );
+        creativeTabsBuilt = true;
+    }
+
+    private enum SearchTarget {
+        DEFAULT,
+        MOD,
+        TOOLTIP,
+        TAG,
+        CREATIVE_TAB,
+        INGREDIENT
+    }
+
+    private record SearchTerm(SearchTarget target, String value, boolean excluded) {
+    }
+
+    private class SearchQuery {
+        private final List<SearchGroup> groups;
+
+        private SearchQuery(List<SearchGroup> groups) {
+            this.groups = groups;
+        }
+
+        private boolean matches(SearchContext context) {
+            if (groups.isEmpty()) {
+                return true;
+            }
+            for (SearchGroup group : groups) {
+                if (group.matches(context)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private class SearchGroup {
+        private final List<SearchTerm> included = new ArrayList<>();
+        private final List<SearchTerm> excluded = new ArrayList<>();
+
+        private void add(SearchTerm term) {
+            if (term.excluded()) {
+                excluded.add(term);
+            } else {
+                included.add(term);
+            }
+        }
+
+        private boolean isEmpty() {
+            return included.isEmpty() && excluded.isEmpty();
+        }
+
+        private boolean matches(SearchContext context) {
+            for (SearchTerm term : excluded) {
+                if (context.matches(term)) {
+                    return false;
+                }
+            }
+            for (SearchTerm term : included) {
+                if (!context.matches(term)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    private class SearchContext {
+        private final ItemStack stack;
+        private final RecipeGroup group;
+        private final ResourceLocation itemKey;
+        private final String itemName;
+        private final String itemId;
+        private String tooltipText;
+        private String tagText;
+        private String creativeTabText;
+        private String ingredientText;
+
+        private SearchContext(RecipeGroup group) {
+            this.group = group;
+            this.stack = getEntryResult(getFirstRecipe(group));
+            this.itemKey = BuiltInRegistries.ITEM.getKey(stack.getItem());
+            this.itemName = stack.getHoverName().getString().toLowerCase(Locale.ROOT);
+            this.itemId = itemKey != null ? itemKey.toString().toLowerCase(Locale.ROOT) : "";
+        }
+
+        private boolean matches(SearchTerm term) {
+            String value = term.value();
+            return switch (term.target()) {
+                case DEFAULT -> itemName.contains(value) || itemId.contains(value);
+                case MOD -> matchesMod(value);
+                case TOOLTIP -> getTooltipText().contains(value);
+                case TAG -> getTagText().contains(value);
+                case CREATIVE_TAB -> getCreativeTabText().contains(value);
+                case INGREDIENT -> getIngredientText().contains(value);
+            };
+        }
+
+        private boolean matchesMod(String value) {
+            if (itemKey == null) {
+                return false;
+            }
+
+            String namespace = itemKey.getNamespace().toLowerCase(Locale.ROOT);
+            if (namespace.contains(value)) {
+                return true;
+            }
+
+            return ModList.get().getModContainerById(namespace)
+                    .map(container -> container.getModInfo().getDisplayName().toLowerCase(Locale.ROOT).contains(value))
+                    .orElse(false);
+        }
+
+        private String getTooltipText() {
+            if (tooltipText == null) {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.level == null) {
+                    tooltipText = "";
+                } else {
+                    StringBuilder text = new StringBuilder();
+                    for (Component line : stack.getTooltipLines(Item.TooltipContext.of(mc.level), mc.player, TooltipFlag.NORMAL)) {
+                        text.append(line.getString().toLowerCase(Locale.ROOT)).append('\n');
+                    }
+                    tooltipText = text.toString();
+                }
+            }
+            return tooltipText;
+        }
+
+        private String getTagText() {
+            if (tagText == null) {
+                StringBuilder text = new StringBuilder();
+                stack.getTags()
+                        .map(TagKey::location)
+                        .forEach(location -> text.append(location).append(' ').append(location.getPath()).append(' '));
+                tagText = text.toString().toLowerCase(Locale.ROOT);
+            }
+            return tagText;
+        }
+
+        private String getCreativeTabText() {
+            if (creativeTabText == null) {
+                ensureCreativeTabsBuilt();
+                StringBuilder text = new StringBuilder();
+                for (CreativeModeTab tab : CreativeModeTabs.allTabs()) {
+                    if (tab.contains(stack)) {
+                        ResourceLocation tabKey = BuiltInRegistries.CREATIVE_MODE_TAB.getKey(tab);
+                        if (tabKey != null) {
+                            text.append(tabKey).append(' ').append(tabKey.getPath()).append(' ');
+                        }
+                        text.append(tab.getDisplayName().getString()).append(' ');
+                    }
+                }
+                creativeTabText = text.toString().toLowerCase(Locale.ROOT);
+            }
+            return creativeTabText;
+        }
+
+        private String getIngredientText() {
+            if (ingredientText == null) {
+                StringBuilder text = new StringBuilder();
+                for (RecipeEntry entry : group.recipes()) {
+                    for (DisplayIngredient ingredient : getIngredientStacks(entry)) {
+                        appendSearchableStackText(text, ingredient.stack());
+                    }
+                }
+                ingredientText = text.toString().toLowerCase(Locale.ROOT);
+            }
+            return ingredientText;
+        }
+
+        private void appendSearchableStackText(StringBuilder text, ItemStack searchableStack) {
+            if (searchableStack.isEmpty()) {
+                return;
+            }
+
+            ResourceLocation key = BuiltInRegistries.ITEM.getKey(searchableStack.getItem());
+            text.append(searchableStack.getHoverName().getString()).append(' ');
+            if (key != null) {
+                text.append(key).append(' ').append(key.getPath()).append(' ');
+            }
+            searchableStack.getTags()
+                    .map(TagKey::location)
+                    .forEach(location -> text.append(location).append(' ').append(location.getPath()).append(' '));
+        }
     }
 
     private boolean canCraftAnyRecipe(RecipeGroup group) {
@@ -665,6 +957,9 @@ public class CraftHelperScreen extends Screen {
     }
 
     private boolean canCraftAnyRecipe(RecipeGroup group, Map<ResourceLocation, Boolean> craftableCache) {
+        if (isCreativeMode()) {
+            return !group.recipes().isEmpty();
+        }
         for (RecipeEntry entry : group.recipes()) {
             if (craftableCache.getOrDefault(entry.id(), false)) {
                 return true;
@@ -697,15 +992,23 @@ public class CraftHelperScreen extends Screen {
     }
 
     private boolean isCraftableCached(RecipeEntry entry) {
-        return entry != null && cachedCraftableRecipes.getOrDefault(entry.id(), false);
+        return entry != null && (isCreativeMode() || cachedCraftableRecipes.getOrDefault(entry.id(), false));
     }
 
     private boolean canCraftEntry(RecipeEntry entry) {
         if (entry == null) return false;
+        if (isCreativeMode()) {
+            return true;
+        }
         if (entry.isBrewing()) {
             return findBrewingMatch(entry.brewing()) != null;
         }
         return canCraftRecipe(entry.recipe());
+    }
+
+    private boolean isCreativeMode() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.player != null && mc.player.getAbilities().instabuild;
     }
 
     private boolean canAttemptNestedCrafting(RecipeEntry entry) {
@@ -929,7 +1232,7 @@ public class CraftHelperScreen extends Screen {
             return !getRecipeResult(recipe).isEmpty();
         }
 
-        return RecipeSupport.isConfiguredSimpleRecipe(recipe, mc.level.registryAccess());
+        return RecipeSupport.isConfiguredSimpleRecipeFor(mc.player, recipe, mc.level.registryAccess());
     }
 
     /**
@@ -941,7 +1244,7 @@ public class CraftHelperScreen extends Screen {
     private boolean isConfiguredSimpleRecipeCraftable(Recipe<?> recipe) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null || !RecipeSupport.isUnlockedFor(mc.player, recipe)
-                || !RecipeSupport.isConfiguredSimpleRecipe(recipe, mc.level.registryAccess())) {
+                || !RecipeSupport.isConfiguredSimpleRecipeFor(mc.player, recipe, mc.level.registryAccess())) {
             return false;
         }
 
@@ -1216,6 +1519,7 @@ public class CraftHelperScreen extends Screen {
         }
 
         drawNavigationButtons(guiGraphics);
+        hoveredRecipeStack = !hoveredIngredient.isEmpty() ? hoveredIngredient : hoveredResult;
         renderRecipeTooltip(guiGraphics, hoveredIngredient, hoveredResult, mouseX, mouseY);
     }
 
@@ -1225,6 +1529,88 @@ public class CraftHelperScreen extends Screen {
         } else if (!result.isEmpty()) {
             guiGraphics.renderTooltip(font, result, mouseX, mouseY);
         }
+    }
+
+    private ItemStack getRecipeStackAt(double mouseX, double mouseY) {
+        int startIndex = 0;
+        int endIndex = sortedRecipeGroups.size();
+        int ingredientXOffset = getPageIngredientXOffset(startIndex, endIndex);
+        int ingredientWidth = getIngredientPanelWidth(ingredientXOffset);
+
+        for (int i = startIndex; i < endIndex; i++) {
+            RecipeGroup group = sortedRecipeGroups.get(i);
+            RecipeEntry entry = getActiveRecipe(group);
+            ItemStack result = getEntryResult(entry);
+            int recipeY = getRecipeY(i);
+
+            if (!result.isEmpty() && isInside(mouseX, mouseY, panelX + RESULT_X_OFFSET, recipeY + 4, INGREDIENT_ICON_SIZE, INGREDIENT_ICON_SIZE)) {
+                return result;
+            }
+
+            DisplayIngredient[] ingredients = getIngredientStacks(entry);
+            int ingX = panelX + ingredientXOffset;
+            int ingredientOffset = getIngredientScrollOffset(ingredients.length, getMaxIngredientCount(group), (int) mouseX, (int) mouseY, ingX, recipeY, ingredientWidth);
+            for (int j = 0; j < ingredients.length; j++) {
+                DisplayIngredient ingredient = ingredients[j];
+                int itemX = ingX + j * INGREDIENT_ICON_SIZE - ingredientOffset;
+                if (ingredient.stack().isEmpty() || itemX <= ingX - INGREDIENT_ICON_SIZE || itemX >= ingX + ingredientWidth) {
+                    continue;
+                }
+
+                int visibleLeft = Math.max(itemX, ingX);
+                int visibleRight = Math.min(itemX + INGREDIENT_ICON_SIZE, ingX + ingredientWidth);
+                if (visibleLeft < visibleRight && isInside(mouseX, mouseY, visibleLeft, recipeY + 6, visibleRight - visibleLeft, INGREDIENT_ICON_SIZE)) {
+                    return ingredient.stack();
+                }
+            }
+        }
+
+        return ItemStack.EMPTY;
+    }
+
+    private boolean searchRecipesForStack(ItemStack stack) {
+        return searchForStack(stack, false);
+    }
+
+    private boolean searchUsesForStack(ItemStack stack) {
+        return searchForStack(stack, true);
+    }
+
+    private boolean searchForStack(ItemStack stack, boolean uses) {
+        if (stack.isEmpty()) {
+            return false;
+        }
+
+        pushSearchHistory();
+        updateSearchText((uses ? "~" : "") + formatSearchTerm(stack.getHoverName().getString()));
+        searchFocused = false;
+        searchAllSelected = false;
+        return true;
+    }
+
+    private void pushSearchHistory() {
+        if (searchHistory.isEmpty() || !Objects.equals(searchHistory.peek(), searchText)) {
+            searchHistory.push(searchText);
+        }
+    }
+
+    private boolean goBackSearchHistory() {
+        if (searchHistory.isEmpty()) {
+            return false;
+        }
+
+        updateSearchText(searchHistory.pop());
+        searchFocused = false;
+        searchAllSelected = false;
+        return true;
+    }
+
+    private String formatSearchTerm(String value) {
+        String cleaned = value.replace("\"", "").trim();
+        if (cleaned.indexOf(' ') >= 0) {
+            return "\"" + cleaned + "\"";
+        }
+        return cleaned;
     }
 
     private int getPageIngredientXOffset(int startIndex, int endIndex) {
@@ -1356,6 +1742,13 @@ public class CraftHelperScreen extends Screen {
             return true;
         }
 
+        if (button == 0 || button == 1) {
+            ItemStack clickedStack = getRecipeStackAt(mouseX, mouseY);
+            if (!clickedStack.isEmpty()) {
+                return button == 0 ? searchRecipesForStack(clickedStack) : searchUsesForStack(clickedStack);
+            }
+        }
+
         if (button != 0) {
             return super.mouseClicked(mouseX, mouseY, button);
         }
@@ -1386,6 +1779,7 @@ public class CraftHelperScreen extends Screen {
         if (isInside(mouseX, mouseY, panelX + panelWidth / 2 - 12, panelY + panelHeight - 30, 24, 18)) {
             refreshInventoryCache();
             startRecipeLoading();
+            searchHistory.clear();
             currentPage = 0;
             refreshButtons();
             return true;
@@ -1548,6 +1942,8 @@ public class CraftHelperScreen extends Screen {
      */
     @Override
     public void onClose() {
+        searchHistory.clear();
+
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null && mc.player.containerMenu != mc.player.inventoryMenu) {
             mc.player.closeContainer();
@@ -1610,6 +2006,19 @@ public class CraftHelperScreen extends Screen {
             }
         }
 
+        if (keyCode == 259 && goBackSearchHistory()) { // Backspace
+            return true;
+        }
+
+        if (!hoveredRecipeStack.isEmpty()) {
+            if (keyCode == 82) { // R
+                return searchRecipesForStack(hoveredRecipeStack);
+            }
+            if (keyCode == 85) { // U
+                return searchUsesForStack(hoveredRecipeStack);
+            }
+        }
+
         if (keyCode == 256) { // ESC 关闭
             onClose();
             return true;
@@ -1665,4 +2074,3 @@ public class CraftHelperScreen extends Screen {
         refreshButtons();
     }
 }
-

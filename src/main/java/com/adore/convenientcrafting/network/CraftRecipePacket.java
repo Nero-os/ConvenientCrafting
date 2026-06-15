@@ -103,6 +103,11 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         int craftCount = Math.min(requestedCraftCount, MAX_BATCH_CRAFTS);
         if (craftCount <= 0) return;
 
+        if (player.getAbilities().instabuild) {
+            craftCreativeRecipe(player, recipeId, craftCount);
+            return;
+        }
+
         if (craftNested) {
             craftNestedRecipe(player, recipeId);
             return;
@@ -137,6 +142,49 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         if (craftedAny) {
             player.containerMenu.broadcastChanges();
         }
+    }
+
+    private static void craftCreativeRecipe(ServerPlayer player, ResourceLocation recipeId, int craftCount) {
+        ItemStack result = buildCreativeRecipeResult(player, recipeId);
+        if (result.isEmpty()) {
+            return;
+        }
+
+        for (int i = 0; i < craftCount; i++) {
+            player.getInventory().add(result.copy());
+        }
+        player.containerMenu.broadcastChanges();
+    }
+
+    private static ItemStack buildCreativeRecipeResult(ServerPlayer player, ResourceLocation recipeId) {
+        var server = player.getServer();
+        if (server == null) return ItemStack.EMPTY;
+
+        if (BrewingRecipeSupport.isBrewingRecipeId(recipeId)) {
+            return buildCreativeBrewingResult(player, recipeId);
+        }
+
+        var optional = server.getRecipeManager().byKey(recipeId);
+        if (optional.isEmpty()) return ItemStack.EMPTY;
+        Recipe<?> recipe = optional.get().value();
+        if (!RecipeSupport.isUnlockedFor(player, recipe)) return ItemStack.EMPTY;
+
+        return recipe.getResultItem(server.registryAccess()).copy();
+    }
+
+    private static ItemStack buildCreativeBrewingResult(ServerPlayer player, ResourceLocation recipeId) {
+        if (!RecipeUnlocks.isBuiltinRecipeTypeEnabled(BrewingRecipeSupport.RECIPE_TYPE_ID)) return ItemStack.EMPTY;
+        if (!RecipeUnlocks.isUnlocked(player, BrewingRecipeSupport.RECIPE_TYPE_ID)) return ItemStack.EMPTY;
+
+        Optional<BrewingRecipeSupport.BrewingRecipeKey> optionalKey = BrewingRecipeSupport.parseRecipeId(recipeId);
+        if (optionalKey.isEmpty()) return ItemStack.EMPTY;
+
+        BrewingRecipeSupport.BrewingRecipeKey key = optionalKey.get();
+        ItemStack expectedInput = BrewingRecipeSupport.createPotionStack(player.registryAccess(), key.containerId(), key.potionId());
+        ItemStack expectedIngredient = BrewingRecipeSupport.createIngredientStack(key.ingredientId());
+        if (expectedInput.isEmpty() || expectedIngredient.isEmpty()) return ItemStack.EMPTY;
+
+        return player.level().potionBrewing().mix(expectedIngredient, expectedInput);
     }
 
     private static void craftNestedRecipe(ServerPlayer player, ResourceLocation recipeId) {
@@ -518,7 +566,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             ));
         }
 
-        if (RecipeSupport.isConfiguredSimpleRecipe(recipe, server.registryAccess())) {
+        if (RecipeSupport.isConfiguredSimpleRecipeFor(player, recipe, server.registryAccess())) {
             ItemStack result = recipe.getResultItem(server.registryAccess()).copy();
             List<IngredientUse> matchedIngredients = matchIngredients(player, RecipeSupport.getNonEmptyIngredients(recipe));
             if (matchedIngredients.isEmpty()) return null;
