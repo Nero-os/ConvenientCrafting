@@ -34,6 +34,8 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.SmithingRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipeInput;
+import net.minecraft.world.item.crafting.SingleRecipeInput;
+import net.minecraft.world.item.crafting.StonecutterRecipe;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.network.PacketDistributor;
 
@@ -1044,6 +1046,14 @@ public class CraftHelperScreen extends Screen {
             return smithingRecipe.matches(input, mc.level) && !smithingRecipe.assemble(input, mc.level.registryAccess()).isEmpty();
         }
 
+        if (recipe instanceof StonecutterRecipe stonecutterRecipe) {
+            ItemStack inputStack = findSingleInputMatch(stonecutterRecipe);
+            if (inputStack.isEmpty() || mc.level == null) return false;
+
+            SingleRecipeInput input = new SingleRecipeInput(inputStack);
+            return stonecutterRecipe.matches(input, mc.level) && !stonecutterRecipe.assemble(input, mc.level.registryAccess()).isEmpty();
+        }
+
         return isConfiguredSimpleRecipeCraftable(recipe);
     }
 
@@ -1131,11 +1141,19 @@ public class CraftHelperScreen extends Screen {
             };
         }
 
-        if (!(recipe instanceof CraftingRecipe craftingRecipe)) {
-            return new DisplayIngredient[0];
+        if (recipe instanceof StonecutterRecipe stonecutterRecipe) {
+            return getSingleInputIngredientStack(stonecutterRecipe);
         }
 
-        List<Ingredient> ingredients = RecipeSupport.getNonEmptyIngredients(craftingRecipe);
+        if (!(recipe instanceof CraftingRecipe craftingRecipe)) {
+            return getSimpleIngredientStacks(recipe);
+        }
+
+        return getSimpleIngredientStacks(craftingRecipe);
+    }
+
+    private DisplayIngredient[] getSimpleIngredientStacks(Recipe<?> recipe) {
+        List<Ingredient> ingredients = RecipeSupport.getNonEmptyIngredients(recipe);
         List<ItemStack> available = getInventorySnapshot();
         DisplayIngredient[] stacks = new DisplayIngredient[ingredients.size()];
         for (int i = 0; i < ingredients.size(); i++) {
@@ -1215,6 +1233,16 @@ public class CraftHelperScreen extends Screen {
             }
         }
 
+        if (recipe instanceof StonecutterRecipe stonecutterRecipe) {
+            ItemStack inputStack = findSingleInputMatch(stonecutterRecipe);
+            if (!inputStack.isEmpty()) {
+                ItemStack assembled = stonecutterRecipe.assemble(new SingleRecipeInput(inputStack), mc.level.registryAccess());
+                if (!assembled.isEmpty()) {
+                    return assembled;
+                }
+            }
+        }
+
         return recipe.getResultItem(mc.level.registryAccess());
     }
 
@@ -1270,6 +1298,28 @@ public class CraftHelperScreen extends Screen {
         if (addition.isEmpty()) return null;
 
         return new SmithingMatch(template, base, addition);
+    }
+
+    private ItemStack findSingleInputMatch(Recipe<?> recipe) {
+        List<Ingredient> ingredients = RecipeSupport.getNonEmptyIngredients(recipe);
+        if (ingredients.size() != 1) {
+            return ItemStack.EMPTY;
+        }
+
+        return takeFirstMatching(getInventorySnapshot(), ingredients.getFirst()::test);
+    }
+
+    private DisplayIngredient[] getSingleInputIngredientStack(Recipe<?> recipe) {
+        List<Ingredient> ingredients = RecipeSupport.getNonEmptyIngredients(recipe);
+        if (ingredients.size() != 1) {
+            return new DisplayIngredient[0];
+        }
+
+        Ingredient ingredient = ingredients.getFirst();
+        List<ItemStack> available = getInventorySnapshot();
+        return new DisplayIngredient[] {
+                getDisplayIngredient(available, ingredient::test, getCyclingIngredientItem(ingredient))
+        };
     }
 
     private BrewingMatch findBrewingMatch(BrewingRecipeEntry recipe) {

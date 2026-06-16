@@ -1,6 +1,7 @@
 package com.adore.convenientcrafting.recipe;
 
 import com.adore.convenientcrafting.config.Config;
+import com.adore.convenientcrafting.recipe.adapter.RecipeTypeAdapters;
 import com.adore.convenientcrafting.recipe.unlock.ClientRecipeUnlocks;
 import com.adore.convenientcrafting.recipe.unlock.RecipeUnlocks;
 
@@ -10,17 +11,13 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeType;
-import net.minecraft.world.item.crafting.SmithingRecipe;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
-import java.util.stream.Collectors;
 
 /**
  * 便捷合成支持的配方类型判断工具。
@@ -36,18 +33,11 @@ public final class RecipeSupport {
      * @return 工作台或锻造台配方返回 {@code true}
      */
     public static boolean isBuiltInSupported(Recipe<?> recipe) {
-        return recipe instanceof CraftingRecipe || recipe instanceof SmithingRecipe;
+        return RecipeTypeAdapters.supportsBuiltInRecipe(recipe);
     }
 
     public static boolean isBuiltInRecipeType(ResourceLocation typeId) {
-        if (typeId == null) {
-            return false;
-        }
-
-        String normalized = typeId.toString().toLowerCase(Locale.ROOT);
-        return normalized.equals("minecraft:crafting")
-                || normalized.equals("minecraft:smithing")
-                || normalized.equals("minecraft:brewing");
+        return RecipeTypeAdapters.isBuiltInRecipeType(typeId);
     }
 
     public static boolean isBuiltInRecipeTypeEnabled(Player player, ResourceLocation typeId) {
@@ -168,17 +158,7 @@ public final class RecipeSupport {
      * @return 去重签名
      */
     public static String buildDuplicateKey(Recipe<?> recipe, HolderLookup.Provider registries) {
-        ItemStack result = recipe.getResultItem(registries);
-        List<String> ingredientKeys = getNonEmptyIngredients(recipe).stream()
-                .map(RecipeSupport::ingredientKey)
-                .sorted()
-                .collect(Collectors.toList());
-
-        if (ingredientKeys.isEmpty()) {
-            return "recipe:" + getRecipeTypeId(recipe) + ":" + resultKey(result);
-        }
-
-        return "simple:" + resultKey(result) + ":" + String.join("|", ingredientKeys);
+        return RecipeTypeAdapters.buildDuplicateKey(recipe, registries);
     }
 
     /**
@@ -190,13 +170,6 @@ public final class RecipeSupport {
     public static ResourceLocation getRecipeTypeId(Recipe<?> recipe) {
         RecipeType<?> type = recipe.getType();
         return BuiltInRegistries.RECIPE_TYPE.getKey(type);
-    }
-
-    private static String ingredientKey(Ingredient ingredient) {
-        return Arrays.stream(ingredient.getItems())
-                .map(RecipeSupport::resultKey)
-                .sorted()
-                .collect(Collectors.joining(","));
     }
 
     private static String resultKey(ItemStack stack) {

@@ -4,6 +4,7 @@ import com.adore.convenientcrafting.ConvenientCrafting;
 import com.adore.convenientcrafting.item.CategorizedBagItem;
 import com.adore.convenientcrafting.recipe.BrewingRecipeSupport;
 import com.adore.convenientcrafting.recipe.RecipeSupport;
+import com.adore.convenientcrafting.recipe.adapter.RecipeTypeAdapters;
 import com.adore.convenientcrafting.recipe.unlock.RecipeUnlocks;
 
 import net.minecraft.core.NonNullList;
@@ -23,6 +24,8 @@ import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.SmithingRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipeInput;
+import net.minecraft.world.item.crafting.SingleRecipeInput;
+import net.minecraft.world.item.crafting.StonecutterRecipe;
 import net.minecraft.world.item.alchemy.PotionBrewing;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -491,15 +494,16 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
 
         List<RecipeHolder<?>> candidates = new ArrayList<>();
         for (RecipeHolder<?> holder : server.getRecipeManager().getRecipes()) {
-            if (!(holder.value() instanceof CraftingRecipe craftingRecipe)) {
+            Recipe<?> recipe = holder.value();
+            if (!RecipeTypeAdapters.supportsNestedCrafting(recipe)) {
                 continue;
             }
 
-            if (!RecipeSupport.isUnlockedFor(player, craftingRecipe)) {
+            if (!RecipeSupport.isUnlockedFor(player, recipe)) {
                 continue;
             }
 
-            ItemStack result = craftingRecipe.getResultItem(server.registryAccess());
+            ItemStack result = recipe.getResultItem(server.registryAccess());
             if (!result.isEmpty() && targetIngredient.test(result)) {
                 candidates.add(holder);
             }
@@ -564,6 +568,17 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
                     match.base(),
                     match.addition()
             ));
+        }
+
+        if (recipe instanceof StonecutterRecipe stonecutterRecipe) {
+            List<IngredientUse> matchedIngredients = matchIngredients(player, RecipeSupport.getNonEmptyIngredients(stonecutterRecipe));
+            if (matchedIngredients.size() != 1) return null;
+
+            SingleRecipeInput input = new SingleRecipeInput(matchedIngredients.getFirst().stack());
+            if (!stonecutterRecipe.matches(input, player.level())) return null;
+
+            ItemStack result = stonecutterRecipe.assemble(input, server.registryAccess());
+            return result.isEmpty() ? null : CraftingResult.single(result, matchedIngredients);
         }
 
         if (RecipeSupport.isConfiguredSimpleRecipeFor(player, recipe, server.registryAccess())) {

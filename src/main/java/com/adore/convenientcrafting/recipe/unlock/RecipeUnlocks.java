@@ -4,6 +4,7 @@ import com.adore.convenientcrafting.ConvenientCrafting;
 import com.adore.convenientcrafting.config.Config;
 import com.adore.convenientcrafting.network.RecipeUnlockSyncPacket;
 import com.adore.convenientcrafting.recipe.BrewingRecipeSupport;
+import com.adore.convenientcrafting.recipe.adapter.RecipeTypeAdapters;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -226,9 +227,10 @@ public final class RecipeUnlocks {
      */
     private static Map<ResourceLocation, List<ResourceLocation>> getUnlockRules() {
         Map<ResourceLocation, List<ResourceLocation>> rules = new HashMap<>();
-        putBuiltinRule(rules, "minecraft:crafting", List.of("minecraft:crafting_table"));
-        putBuiltinRule(rules, "minecraft:smithing", List.of("minecraft:smithing_table"));
-        putBuiltinRule(rules, "minecraft:brewing", List.of("minecraft:brewing_stand"));
+        putBuiltinRule(rules, RecipeTypeAdapters.CRAFTING.toString(), List.of("minecraft:crafting_table"));
+        putBuiltinRule(rules, RecipeTypeAdapters.SMITHING.toString(), List.of("minecraft:smithing_table"));
+        putBuiltinRule(rules, RecipeTypeAdapters.BREWING.toString(), List.of("minecraft:brewing_stand"));
+        putBuiltinRule(rules, RecipeTypeAdapters.STONECUTTING.toString(), List.of("minecraft:stonecutter"));
 
         for (String rule : Config.RECIPE_TYPE_UNLOCK_ITEMS.get()) {
             String[] parts = rule.split("=", 2);

@@ -1,5 +1,7 @@
 package com.adore.convenientcrafting.config;
 
+import com.adore.convenientcrafting.recipe.adapter.RecipeTypeAdapters;
+
 import java.util.List;
 
 import net.minecraft.resources.ResourceLocation;
@@ -23,12 +25,17 @@ public class Config {
             .comment(
                     "Built-in vanilla workstation recipe type ids enabled for Convenient Crafting.",
                     "Remove an id from this list to disable that workstation type.",
-                    "Supported built-in ids: minecraft:crafting, minecraft:smithing, minecraft:brewing"
+                    "Supported built-in ids: minecraft:crafting, minecraft:smithing, minecraft:brewing, minecraft:stonecutting"
             )
             .translation("convenientcrafting.configuration.enabledBuiltinRecipeTypes")
             .defineListAllowEmpty(
                     "enabledBuiltinRecipeTypes",
-                    List.of("minecraft:crafting", "minecraft:smithing", "minecraft:brewing"),
+                    List.of(
+                            RecipeTypeAdapters.CRAFTING.toString(),
+                            RecipeTypeAdapters.SMITHING.toString(),
+                            RecipeTypeAdapters.BREWING.toString(),
+                            RecipeTypeAdapters.STONECUTTING.toString()
+                    ),
                     () -> "",
                     Config::validateBuiltinRecipeType
             );
@@ -59,7 +66,7 @@ public class Config {
             .comment(
                     "Recipe type unlock rules. Format: recipe_type=item_id,item_id",
                     "Players permanently unlock the recipe type after obtaining any listed item.",
-                    "Built-in defaults are always available for minecraft:crafting, minecraft:smithing, and minecraft:brewing.",
+                    "Built-in defaults are always available for minecraft:crafting, minecraft:smithing, minecraft:brewing, and minecraft:stonecutting.",
                     "Examples: malum:spirit_infusion=malum:spirit_altar, create:mechanical_crafting=create:mechanical_crafter"
             )
             .translation("convenientcrafting.configuration.recipeTypeUnlockItems")
@@ -85,10 +92,7 @@ public class Config {
             return false;
         }
 
-        return switch (location.trim()) {
-            case "minecraft:crafting", "minecraft:smithing", "minecraft:brewing" -> true;
-            default -> false;
-        };
+        return RecipeTypeAdapters.isBuiltInRecipeType(ResourceLocation.tryParse(location.trim()));
     }
 
     /**

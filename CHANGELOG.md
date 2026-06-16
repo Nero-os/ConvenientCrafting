@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.5.0 - 2026-06-15
+## 1.5.0 - 2026-06-16
 
 ### Added
 
@@ -9,14 +9,17 @@
 - Added usage lookup interactions in the convenient crafting list: hover an item and press `U`, or right-click it, to search for recipes that use it as an ingredient.
 - Added search navigation history for recipe and usage lookups, allowing `Backspace` to return to the previous lookup when the search box is not focused.
 - Added administrator commands to unlock recipe types for players: `/convenientcrafting unlock <targets> all` and `/convenientcrafting unlock <targets> <recipe_type_id>`.
+- Added stonecutter recipe support to the convenient crafting panel, including config defaults, workstation unlocks, craftability checks, direct crafting, and nested crafting candidates.
+- Added a shared recipe type adapter registry so built-in workstation recipe types keep separate indexing and duplicate-detection rules.
 
 ### Changed
 
 - Recipe and usage lookup searches now automatically quote item names containing spaces so multi-word item names search correctly.
 - Refreshing or closing the convenient crafting panel now clears recipe and usage lookup history for the current panel session.
 - Creative-mode players can now craft any visible convenient crafting recipe directly without materials, with all recipe buttons shown as available.
+- Recipe duplicate keys now include the recipe type id, preventing different workstation types with similar ingredients and results from hiding each other.
 
-## 1.4.0 - 2026-06-12
+## 1.4.0 - 2026-06-15
 
 ### Added
 
