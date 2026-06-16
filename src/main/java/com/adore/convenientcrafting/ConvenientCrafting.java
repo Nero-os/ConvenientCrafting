@@ -27,7 +27,7 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 /**
- * Convenient Crafting 模组的公共入口类。TODO：配置文件、收纳袋shift显示内部
+ * Convenient Crafting 模组的公共入口类。TODO：配置文件、收纳袋shift显示内部 bug:酿造台配方默认解锁了，其他工作方块配方解锁不了了
  *
  * <p>负责注册方块、物品、创造模式标签、配置项和客户端到服务端的数据包处理器。</p>
  */
