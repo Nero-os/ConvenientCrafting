@@ -20,12 +20,16 @@
 - Creative-mode players can now craft any visible convenient crafting recipe directly without materials, with all recipe buttons shown as available.
 - Recipe duplicate keys now include the recipe type id, preventing different workstation types with similar ingredients and results from hiding each other.
 - Nested crafting preflight now stops expanding ingredients that already appear higher in the current material chain, reducing recursive loops and cleaner missing-material trees.
+- Convenient crafting now warms up a small amount of craftability data before sorting so craftable recipes remain prioritized without restoring full upfront scans.
+- Background recipe index preloading now processes larger batches so the index is ready sooner after entering a world.
 
 ### Fixed
 
 - Fixed the convenient crafting page reset button requiring a second click to return to the first page and potentially crashing when clicked repeatedly.
 - Fixed repeated ancestor ingredients still appearing as red leaves in nested crafting missing-material trees.
 - Fixed the foreground convenient crafting screen accidentally finalizing an empty recipe queue while a background recipe index was still loading, which could leave only brewing recipes visible.
+- Fixed brewing missing-material trees only showing the missing input potion and skipping the missing brewing ingredient.
+- Fixed craftable recipe states staying stale after crafting by refreshing when the client inventory changes, with a short timeout fallback.
 
 ## 1.4.0 - 2026-06-15
 
