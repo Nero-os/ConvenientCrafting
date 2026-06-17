@@ -266,10 +266,7 @@ public final class RecipeUnlocks {
     }
 
     private static void putBuiltinRule(Map<ResourceLocation, List<ResourceLocation>> rules, String recipeTypeId, List<String> itemIds) {
-        ResourceLocation typeId = ResourceLocation.parse(recipeTypeId);
-        if (isBuiltinRecipeTypeEnabled(typeId)) {
-            putRule(rules, recipeTypeId, itemIds);
-        }
+        putRule(rules, recipeTypeId, itemIds);
     }
 
     private static ItemStack findFirstUnlockItem(Player player, List<ResourceLocation> unlockItemIds) {
@@ -312,6 +309,8 @@ public final class RecipeUnlocks {
         return switch (normalized) {
             case "minecraft:crafting" -> "工作台配方";
             case "minecraft:smithing" -> "锻造台配方";
+            case "minecraft:brewing" -> "酿造台配方";
+            case "minecraft:stonecutting" -> "切石机配方";
             default -> recipeTypeId + " 配方";
         };
     }

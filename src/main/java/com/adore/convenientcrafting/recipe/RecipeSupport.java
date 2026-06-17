@@ -120,16 +120,20 @@ public final class RecipeSupport {
      */
     public static boolean isUnlockedFor(Player player, Recipe<?> recipe) {
         ResourceLocation typeId = getRecipeTypeId(recipe);
-        if (typeId == null) {
+        ResourceLocation adapterTypeId = RecipeTypeAdapters.findBuiltInAdapter(recipe)
+                .map(adapter -> adapter.typeId())
+                .orElse(null);
+        ResourceLocation effectiveTypeId = adapterTypeId != null ? adapterTypeId : typeId;
+        if (effectiveTypeId == null) {
             return false;
         }
-        if (isBuiltInRecipeType(typeId) && !isBuiltInRecipeTypeEnabled(player, typeId)) {
+        if (isBuiltInRecipeType(effectiveTypeId) && !isBuiltInRecipeTypeEnabled(player, effectiveTypeId)) {
             return false;
         }
         if (player instanceof ServerPlayer) {
-            return RecipeUnlocks.isUnlocked(player, typeId);
+            return RecipeUnlocks.isUnlocked(player, effectiveTypeId);
         }
-        return ClientRecipeUnlocks.isUnlocked(typeId);
+        return ClientRecipeUnlocks.isUnlocked(effectiveTypeId);
     }
 
     /**

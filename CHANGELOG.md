@@ -10,6 +10,7 @@
 - Added search navigation history for recipe and usage lookups, allowing `Backspace` to return to the previous lookup when the search box is not focused.
 - Added administrator commands to unlock recipe types for players: `/convenientcrafting unlock <targets> all` and `/convenientcrafting unlock <targets> <recipe_type_id>`.
 - Added stonecutter recipe support to the convenient crafting panel, including config defaults, workstation unlocks, craftability checks, direct crafting, and nested crafting candidates.
+- Added nested crafting support for brewing recipes, including recursive intermediate potion brewing and missing-material tree display.
 - Added a shared recipe type adapter registry so built-in workstation recipe types keep separate indexing and duplicate-detection rules.
 
 ### Changed
@@ -18,6 +19,13 @@
 - Refreshing or closing the convenient crafting panel now clears recipe and usage lookup history for the current panel session.
 - Creative-mode players can now craft any visible convenient crafting recipe directly without materials, with all recipe buttons shown as available.
 - Recipe duplicate keys now include the recipe type id, preventing different workstation types with similar ingredients and results from hiding each other.
+- Nested crafting preflight now stops expanding ingredients that already appear higher in the current material chain, reducing recursive loops and cleaner missing-material trees.
+
+### Fixed
+
+- Fixed the convenient crafting page reset button requiring a second click to return to the first page and potentially crashing when clicked repeatedly.
+- Fixed repeated ancestor ingredients still appearing as red leaves in nested crafting missing-material trees.
+- Fixed the foreground convenient crafting screen accidentally finalizing an empty recipe queue while a background recipe index was still loading, which could leave only brewing recipes visible.
 
 ## 1.4.0 - 2026-06-15
 

@@ -111,6 +111,7 @@ public class CraftHelperScreen extends Screen {
     private int loadedRecipeCount;
     private int totalRecipeLoadCount;
     private boolean recipesLoading;
+    private boolean waitingForBackgroundIndex;
     private boolean creativeTabsBuilt;
 
     /**
@@ -213,7 +214,7 @@ public class CraftHelperScreen extends Screen {
      * 避免相同配方 ID 被重复加入。</p>
      */
     private void loadRecipes() {
-        allRecipeGroups.clear();
+        allRecipeGroups = new ArrayList<>();
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
@@ -240,9 +241,9 @@ public class CraftHelperScreen extends Screen {
     }
 
     private void startRecipeLoading() {
-        allRecipeGroups.clear();
-        viewRecipeGroups.clear();
-        sortedRecipeGroups.clear();
+        allRecipeGroups = new ArrayList<>();
+        viewRecipeGroups = new ArrayList<>();
+        sortedRecipeGroups = new ArrayList<>();
         cachedCraftableRecipes.clear();
         pendingRecipeLoad.clear();
         pendingDuplicateRecipes.clear();
@@ -251,6 +252,7 @@ public class CraftHelperScreen extends Screen {
         loadedRecipeCount = 0;
         totalRecipeLoadCount = 0;
         recipesLoading = false;
+        waitingForBackgroundIndex = false;
         creativeTabsBuilt = false;
 
         Minecraft mc = Minecraft.getInstance();
@@ -261,7 +263,7 @@ public class CraftHelperScreen extends Screen {
         }
 
         if (!backgroundIndexBuild && backgroundIndexBuilder != null && backgroundIndexBuilder.isLoadingForCurrentRecipeIndex(mc)) {
-            syncFromBackgroundIndexBuilder();
+            followBackgroundIndexBuilder();
             return;
         }
 
@@ -297,14 +299,23 @@ public class CraftHelperScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
-        if (!backgroundIndexBuild && recipesLoading && backgroundIndexBuilder != null) {
+        if (!backgroundIndexBuild && waitingForBackgroundIndex) {
             Minecraft mc = Minecraft.getInstance();
-            if (mc.level != null && backgroundIndexBuilder.isLoadingForCurrentRecipeIndex(mc)) {
+            if (mc.level != null && backgroundIndexBuilder != null && backgroundIndexBuilder.isLoadingForCurrentRecipeIndex(mc)) {
                 tickRecipeIndexPreload();
                 if (tryUseCachedRecipeIndex(mc)) {
+                    waitingForBackgroundIndex = false;
                     return;
                 }
-                syncFromBackgroundIndexBuilder();
+                if (backgroundIndexBuilder != null && backgroundIndexBuilder.isLoadingForCurrentRecipeIndex(mc)) {
+                    followBackgroundIndexBuilder();
+                    return;
+                }
+            }
+
+            waitingForBackgroundIndex = false;
+            if (mc.level != null) {
+                startRecipeLoading();
                 return;
             }
         }
@@ -314,6 +325,9 @@ public class CraftHelperScreen extends Screen {
 
     private void continueRecipeLoading() {
         if (!recipesLoading) {
+            return;
+        }
+        if (waitingForBackgroundIndex) {
             return;
         }
 
@@ -355,10 +369,14 @@ public class CraftHelperScreen extends Screen {
                 && loadingUnlockRevision == ClientRecipeUnlocks.getRevision();
     }
 
-    private void syncFromBackgroundIndexBuilder() {
+    private void followBackgroundIndexBuilder() {
+        waitingForBackgroundIndex = true;
         loadedRecipeCount = backgroundIndexBuilder.loadedRecipeCount;
         totalRecipeLoadCount = backgroundIndexBuilder.totalRecipeLoadCount;
         recipesLoading = backgroundIndexBuilder.recipesLoading;
+        loadingRecipeManager = backgroundIndexBuilder.loadingRecipeManager;
+        loadingRecipeCount = backgroundIndexBuilder.loadingRecipeCount;
+        loadingUnlockRevision = backgroundIndexBuilder.loadingUnlockRevision;
     }
 
     private void storeRecipeIndexCache(Minecraft mc) {
@@ -522,12 +540,10 @@ public class CraftHelperScreen extends Screen {
     }
 
     private void initializeRecipeViewQuickly() {
-        viewRecipeGroups = new ArrayList<>(allRecipeGroups);
-        filteredRecipeCount = viewRecipeGroups.size();
+        rebuildRecipeView();
         clampCurrentPage();
         materializeCurrentPage();
         refreshCurrentPageCraftability();
-        filteredCraftableGroupCount = countCraftableGroupsInView();
     }
 
     private void rebuildRecipeView() {
@@ -1014,7 +1030,7 @@ public class CraftHelperScreen extends Screen {
     }
 
     private boolean canAttemptNestedCrafting(RecipeEntry entry) {
-        return entry != null && !entry.isBrewing() && entry.recipe() != null && !getEntryResult(entry).isEmpty();
+        return entry != null && (entry.isBrewing() || entry.recipe() != null) && !getEntryResult(entry).isEmpty();
     }
 
     private boolean isNestedCraftingRequested() {
@@ -1827,10 +1843,10 @@ public class CraftHelperScreen extends Screen {
             return true;
         }
         if (isInside(mouseX, mouseY, panelX + panelWidth / 2 - 12, panelY + panelHeight - 30, 24, 18)) {
+            currentPage = 0;
             refreshInventoryCache();
             startRecipeLoading();
             searchHistory.clear();
-            currentPage = 0;
             refreshButtons();
             return true;
         }

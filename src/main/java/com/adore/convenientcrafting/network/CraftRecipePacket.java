@@ -7,7 +7,9 @@ import com.adore.convenientcrafting.recipe.RecipeSupport;
 import com.adore.convenientcrafting.recipe.adapter.RecipeTypeAdapters;
 import com.adore.convenientcrafting.recipe.unlock.RecipeUnlocks;
 
+import net.minecraft.core.Holder;
 import net.minecraft.core.NonNullList;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -17,7 +19,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.Potion;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
@@ -27,6 +32,7 @@ import net.minecraft.world.item.crafting.SmithingRecipeInput;
 import net.minecraft.world.item.crafting.SingleRecipeInput;
 import net.minecraft.world.item.crafting.StonecutterRecipe;
 import net.minecraft.world.item.alchemy.PotionBrewing;
+import net.minecraft.world.item.alchemy.PotionContents;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
@@ -194,26 +200,26 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         var server = player.getServer();
         if (server == null) return;
 
+        NestedCraftingSimulation simulation;
+        RecipeHolder<?> targetHolder = null;
         if (BrewingRecipeSupport.isBrewingRecipeId(recipeId)) {
-            craftRecipe(player, recipeId, 1, false);
-            return;
+            simulation = simulateNestedBrewing(player, recipeId);
+        } else {
+            var optional = server.getRecipeManager().byKey(recipeId);
+            if (optional.isEmpty()) return;
+
+            targetHolder = optional.get();
+            simulation = simulateNestedCrafting(player, targetHolder);
         }
-
-        var optional = server.getRecipeManager().byKey(recipeId);
-        if (optional.isEmpty()) return;
-
-        RecipeHolder<?> targetHolder = optional.get();
-        NestedCraftingSimulation simulation = simulateNestedCrafting(player, targetHolder);
         if (!simulation.success()) {
-            PacketDistributor.sendToPlayer(player, new NestedCraftingMissingMaterialsPacket(buildMissingMaterialRows(player, targetHolder)));
+            PacketDistributor.sendToPlayer(player, new NestedCraftingMissingMaterialsPacket(buildMissingMaterialRows(player, recipeId, targetHolder)));
             return;
         }
 
         InventoryBackup backup = InventoryBackup.capture(player);
         boolean craftedAll = true;
         for (ResourceLocation plannedRecipeId : simulation.plan()) {
-            var planned = server.getRecipeManager().byKey(plannedRecipeId);
-            if (planned.isEmpty() || !finishCrafting(player, buildCraftingResult(player, planned.get().value()))) {
+            if (!finishNestedPlannedRecipe(player, plannedRecipeId)) {
                 craftedAll = false;
                 break;
             }
@@ -224,8 +230,20 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         } else {
             backup.restore(player);
             player.containerMenu.broadcastChanges();
-            PacketDistributor.sendToPlayer(player, new NestedCraftingMissingMaterialsPacket(buildMissingMaterialRows(player, targetHolder)));
+            PacketDistributor.sendToPlayer(player, new NestedCraftingMissingMaterialsPacket(buildMissingMaterialRows(player, recipeId, targetHolder)));
         }
+    }
+
+    private static boolean finishNestedPlannedRecipe(ServerPlayer player, ResourceLocation recipeId) {
+        if (BrewingRecipeSupport.isBrewingRecipeId(recipeId)) {
+            return finishCrafting(player, buildBrewingCraftingResult(player, recipeId));
+        }
+
+        var server = player.getServer();
+        if (server == null) return false;
+
+        var planned = server.getRecipeManager().byKey(recipeId);
+        return planned.isPresent() && finishCrafting(player, buildCraftingResult(player, planned.get().value()));
     }
 
     private static NestedCraftingSimulation simulateNestedCrafting(ServerPlayer player, RecipeHolder<?> targetHolder) {
@@ -234,13 +252,63 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         MissingMaterials missing = new MissingMaterials();
         Set<ResourceLocation> visiting = new HashSet<>();
         NestedCraftingContext context = new NestedCraftingContext();
+        NestedIngredientPath ingredientPath = new NestedIngredientPath();
 
-        boolean success = simulateRecipe(player, targetHolder, pool, plan, missing, visiting, 0, context);
+        boolean success = simulateRecipe(player, targetHolder, pool, plan, missing, visiting, ingredientPath, 0, context);
         if (!success) {
             return new NestedCraftingSimulation(false, List.of(), missing.toStacks());
         }
 
         return new NestedCraftingSimulation(true, plan, List.of());
+    }
+
+    private static NestedCraftingSimulation simulateNestedBrewing(ServerPlayer player, ResourceLocation recipeId) {
+        MaterialPool pool = MaterialPool.fromPlayer(player);
+        List<ResourceLocation> plan = new ArrayList<>();
+        MissingMaterials missing = new MissingMaterials();
+        Set<ResourceLocation> visiting = new HashSet<>();
+        NestedCraftingContext context = new NestedCraftingContext();
+        NestedIngredientPath ingredientPath = new NestedIngredientPath();
+
+        boolean success = simulateBrewingRecipe(player, recipeId, pool, plan, missing, visiting, ingredientPath, 0, context);
+        if (!success) {
+            return new NestedCraftingSimulation(false, List.of(), missing.toStacks());
+        }
+
+        return new NestedCraftingSimulation(true, plan, List.of());
+    }
+
+    private static boolean simulateBrewingRecipe(
+            ServerPlayer player,
+            ResourceLocation recipeId,
+            MaterialPool pool,
+            List<ResourceLocation> plan,
+            MissingMaterials missing,
+            Set<ResourceLocation> visiting,
+            NestedIngredientPath ingredientPath,
+            int depth,
+            NestedCraftingContext context
+    ) {
+        BrewingCraftingData brewing = getBrewingCraftingData(player, recipeId);
+        if (brewing == null
+                || visiting.contains(recipeId)
+                || depth > MAX_NESTED_SEARCH_DEPTH
+                || !context.tryUseStep()) {
+            return false;
+        }
+
+        visiting.add(recipeId);
+        boolean success = satisfyExactStack(player, brewing.input(), pool, plan, missing, visiting, ingredientPath, depth, context)
+                && satisfyItemStack(player, brewing.ingredient(), pool, plan, missing, visiting, ingredientPath, depth, context);
+        visiting.remove(recipeId);
+
+        if (!success) {
+            return false;
+        }
+
+        plan.add(recipeId);
+        pool.add(brewing.result());
+        return true;
     }
 
     /**
@@ -261,7 +329,36 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         if (!target.isEmpty()) {
             rows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(target, false, 0));
         }
-        buildMissingRowsForRecipe(player, targetHolder, pool, rows, new HashSet<>(), 1, context);
+        buildMissingRowsForRecipe(player, targetHolder, pool, rows, new HashSet<>(), new NestedIngredientPath(), 1, context);
+        return rows;
+    }
+
+    private static List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> buildMissingMaterialRows(
+            ServerPlayer player,
+            ResourceLocation recipeId,
+            RecipeHolder<?> targetHolder
+    ) {
+        if (!BrewingRecipeSupport.isBrewingRecipeId(recipeId)) {
+            return targetHolder == null ? List.of() : buildMissingMaterialRows(player, targetHolder);
+        }
+
+        List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows = new ArrayList<>();
+        BrewingCraftingData brewing = getBrewingCraftingData(player, recipeId);
+        if (brewing == null) {
+            return rows;
+        }
+
+        rows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(brewing.result(), false, 0));
+        buildMissingRowsForBrewingRecipe(
+                player,
+                recipeId,
+                MaterialPool.fromPlayer(player),
+                rows,
+                new HashSet<>(),
+                new NestedIngredientPath(),
+                1,
+                new NestedCraftingContext()
+        );
         return rows;
     }
 
@@ -285,6 +382,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             MaterialPool pool,
             List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows,
             Set<ResourceLocation> visiting,
+            NestedIngredientPath ingredientPath,
             int depth,
             NestedCraftingContext context
     ) {
@@ -312,33 +410,48 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
                 continue;
             }
 
+            // 子配方如果又需要上层已经在等待的材料，就停止继续展开。
+            // 这样缺料树不会出现 A -> B -> A 的套娃链，也能减少递归预检的搜索量。
+            if (ingredientPath.contains(ingredient)) {
+                success = false;
+                continue;
+            }
+
             MissingTreeAttempt bestFailedAttempt = null;
             // 已有材料不够时，尝试选择一个能产出该材料的中间配方继续展开。
-            for (RecipeHolder<?> candidate : context.findNestedCraftingCandidates(player, ingredient)) {
-                if (visiting.contains(candidate.id())) {
-                    continue;
-                }
+            ingredientPath.push(ingredient);
+            try {
+                for (RecipeHolder<?> candidate : context.findNestedCraftingCandidates(player, ingredient)) {
+                    if (visiting.contains(candidate.id())) {
+                        continue;
+                    }
 
-                MaterialPool candidatePool = pool.copy();
-                List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> candidateRows = new ArrayList<>();
-                ItemStack candidateResult = candidate.value().getResultItem(player.registryAccess()).copy();
-                if (!candidateResult.isEmpty()) {
-                    candidateRows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(candidateResult, false, depth));
-                }
+                    MaterialPool candidatePool = pool.copy();
+                    List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> candidateRows = new ArrayList<>();
+                    ItemStack candidateResult = candidate.value().getResultItem(player.registryAccess()).copy();
+                    if (!candidateResult.isEmpty()) {
+                        candidateRows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(candidateResult, false, depth));
+                    }
 
-                boolean candidateSuccess = buildMissingRowsForRecipe(player, candidate, candidatePool, candidateRows, visiting, depth + 1, context)
-                        && !candidatePool.consumeStack(ingredient).isEmpty();
-                if (candidateSuccess) {
-                    pool.copyFrom(candidatePool);
-                    addMissingTreeRows(rows, candidateRows);
-                    bestFailedAttempt = null;
-                    break;
-                }
+                    boolean candidateSuccess = buildMissingRowsForRecipe(player, candidate, candidatePool, candidateRows, visiting, ingredientPath, depth + 1, context)
+                            && !candidatePool.consumeStack(ingredient).isEmpty();
+                    if (candidateSuccess) {
+                        pool.copyFrom(candidatePool);
+                        addMissingTreeRows(rows, candidateRows);
+                        bestFailedAttempt = null;
+                        break;
+                    }
 
-                int missingCount = countMissingRows(candidateRows);
-                if (bestFailedAttempt == null || missingCount < bestFailedAttempt.missingCount()) {
-                    bestFailedAttempt = new MissingTreeAttempt(candidateRows, missingCount);
+                    int missingCount = countMissingRows(candidateRows);
+                    if (missingCount == 0) {
+                        continue;
+                    }
+                    if (bestFailedAttempt == null || missingCount < bestFailedAttempt.missingCount()) {
+                        bestFailedAttempt = new MissingTreeAttempt(candidateRows, missingCount);
+                    }
                 }
+            } finally {
+                ingredientPath.pop(ingredient);
             }
 
             if (bestFailedAttempt != null && !bestFailedAttempt.rows().isEmpty()) {
@@ -361,6 +474,165 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
     /**
      * 统计树形行中缺失材料的数量，用于选择更有参考价值的失败路径。
      */
+    private static boolean buildMissingRowsForBrewingRecipe(
+            ServerPlayer player,
+            ResourceLocation recipeId,
+            MaterialPool pool,
+            List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows,
+            Set<ResourceLocation> visiting,
+            NestedIngredientPath ingredientPath,
+            int depth,
+            NestedCraftingContext context
+    ) {
+        BrewingCraftingData brewing = getBrewingCraftingData(player, recipeId);
+        if (brewing == null
+                || visiting.contains(recipeId)
+                || depth > MAX_NESTED_SEARCH_DEPTH
+                || rows.size() >= MAX_MISSING_TREE_ROWS
+                || !context.tryUseStep()) {
+            return false;
+        }
+
+        visiting.add(recipeId);
+        boolean inputAvailable = buildMissingRowsForExactStack(player, brewing.input(), pool, rows, visiting, ingredientPath, depth, context);
+        boolean ingredientAvailable = buildMissingRowsForItemStack(player, brewing.ingredient(), pool, rows, visiting, ingredientPath, depth, context);
+        boolean success = inputAvailable && ingredientAvailable;
+        visiting.remove(recipeId);
+
+        if (success) {
+            pool.add(brewing.result());
+        }
+        return success;
+    }
+
+    private static boolean buildMissingRowsForExactStack(
+            ServerPlayer player,
+            ItemStack target,
+            MaterialPool pool,
+            List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows,
+            Set<ResourceLocation> visiting,
+            NestedIngredientPath ingredientPath,
+            int depth,
+            NestedCraftingContext context
+    ) {
+        ItemStack consumed = pool.consumeExact(target);
+        if (!consumed.isEmpty()) {
+            addMissingTreeRow(rows, new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(consumed, false, depth));
+            return true;
+        }
+
+        if (ingredientPath.containsStack(target, true)) {
+            return false;
+        }
+
+        MissingTreeAttempt bestFailedAttempt = null;
+        ingredientPath.pushStack(target, true);
+        try {
+            for (ResourceLocation candidateId : context.findBrewingCandidates(player, target)) {
+                if (visiting.contains(candidateId)) {
+                    continue;
+                }
+
+                BrewingCraftingData candidateData = getBrewingCraftingData(player, candidateId);
+                if (candidateData == null) {
+                    continue;
+                }
+
+                MaterialPool candidatePool = pool.copy();
+                List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> candidateRows = new ArrayList<>();
+                candidateRows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(candidateData.result(), false, depth));
+
+                boolean candidateSuccess = buildMissingRowsForBrewingRecipe(player, candidateId, candidatePool, candidateRows, visiting, ingredientPath, depth + 1, context)
+                        && !candidatePool.consumeExact(target).isEmpty();
+                if (candidateSuccess) {
+                    pool.copyFrom(candidatePool);
+                    addMissingTreeRows(rows, candidateRows);
+                    return true;
+                }
+
+                int missingCount = countMissingRows(candidateRows);
+                if (missingCount == 0) {
+                    continue;
+                }
+                if (bestFailedAttempt == null || missingCount < bestFailedAttempt.missingCount()) {
+                    bestFailedAttempt = new MissingTreeAttempt(candidateRows, missingCount);
+                }
+            }
+        } finally {
+            ingredientPath.popStack(target, true);
+        }
+
+        if (bestFailedAttempt != null && !bestFailedAttempt.rows().isEmpty()) {
+            addMissingTreeRows(rows, bestFailedAttempt.rows());
+        } else if (rows.size() < MAX_MISSING_TREE_ROWS) {
+            addMissingTreeRow(rows, new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(target.copyWithCount(1), true, depth));
+        }
+        return false;
+    }
+
+    private static boolean buildMissingRowsForItemStack(
+            ServerPlayer player,
+            ItemStack target,
+            MaterialPool pool,
+            List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows,
+            Set<ResourceLocation> visiting,
+            NestedIngredientPath ingredientPath,
+            int depth,
+            NestedCraftingContext context
+    ) {
+        ItemStack consumed = pool.consumeItem(target);
+        if (!consumed.isEmpty()) {
+            addMissingTreeRow(rows, new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(consumed, false, depth));
+            return true;
+        }
+
+        if (ingredientPath.containsStack(target, false)) {
+            return false;
+        }
+
+        MissingTreeAttempt bestFailedAttempt = null;
+        ingredientPath.pushStack(target, false);
+        try {
+            for (RecipeHolder<?> candidate : context.findNestedCraftingCandidates(player, target, false)) {
+                if (visiting.contains(candidate.id())) {
+                    continue;
+                }
+
+                MaterialPool candidatePool = pool.copy();
+                List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> candidateRows = new ArrayList<>();
+                ItemStack candidateResult = candidate.value().getResultItem(player.registryAccess()).copy();
+                if (!candidateResult.isEmpty()) {
+                    candidateRows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(candidateResult, false, depth));
+                }
+
+                boolean candidateSuccess = buildMissingRowsForRecipe(player, candidate, candidatePool, candidateRows, visiting, ingredientPath, depth + 1, context)
+                        && !candidatePool.consumeItem(target).isEmpty();
+                if (candidateSuccess) {
+                    pool.copyFrom(candidatePool);
+                    addMissingTreeRows(rows, candidateRows);
+                    return true;
+                }
+
+                int missingCount = countMissingRows(candidateRows);
+                if (missingCount == 0) {
+                    continue;
+                }
+                if (bestFailedAttempt == null || missingCount < bestFailedAttempt.missingCount()) {
+                    bestFailedAttempt = new MissingTreeAttempt(candidateRows, missingCount);
+                }
+            }
+        } finally {
+            ingredientPath.popStack(target, false);
+        }
+
+        if (bestFailedAttempt != null && !bestFailedAttempt.rows().isEmpty()) {
+            addMissingTreeRows(rows, bestFailedAttempt.rows());
+        } else if (rows.size() < MAX_MISSING_TREE_ROWS) {
+            addMissingTreeRow(rows, new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(target.copyWithCount(1), true, depth));
+        }
+        return false;
+    }
+
     private static int countMissingRows(List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows) {
         int count = 0;
         for (NestedCraftingMissingMaterialsPacket.MissingMaterialRow row : rows) {
@@ -408,6 +680,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             List<ResourceLocation> plan,
             MissingMaterials missing,
             Set<ResourceLocation> visiting,
+            NestedIngredientPath ingredientPath,
             int depth,
             NestedCraftingContext context
     ) {
@@ -428,7 +701,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         visiting.add(holder.id());
         boolean success = true;
         for (Ingredient ingredient : ingredients) {
-            if (!satisfyIngredient(player, ingredient, pool, plan, missing, visiting, depth, context)) {
+            if (!satisfyIngredient(player, ingredient, pool, plan, missing, visiting, ingredientPath, depth, context)) {
                 success = false;
                 break;
             }
@@ -449,6 +722,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             List<ResourceLocation> plan,
             MissingMaterials missing,
             Set<ResourceLocation> visiting,
+            NestedIngredientPath ingredientPath,
             int depth,
             NestedCraftingContext context
     ) {
@@ -456,34 +730,158 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             return true;
         }
 
+        if (ingredientPath.contains(ingredient)) {
+            missing.addIngredient(ingredient);
+            return false;
+        }
+
         MissingMaterials bestMissing = null;
-        for (RecipeHolder<?> candidate : context.findNestedCraftingCandidates(player, ingredient)) {
-            if (visiting.contains(candidate.id())) {
-                continue;
-            }
+        ingredientPath.push(ingredient);
+        try {
+            for (RecipeHolder<?> candidate : context.findNestedCraftingCandidates(player, ingredient)) {
+                if (visiting.contains(candidate.id())) {
+                    continue;
+                }
 
-            MaterialPool candidatePool = pool.copy();
-            List<ResourceLocation> candidatePlan = new ArrayList<>(plan);
-            MissingMaterials candidateMissing = new MissingMaterials();
+                MaterialPool candidatePool = pool.copy();
+                List<ResourceLocation> candidatePlan = new ArrayList<>(plan);
+                MissingMaterials candidateMissing = new MissingMaterials();
 
-            if (simulateRecipe(player, candidate, candidatePool, candidatePlan, candidateMissing, visiting, depth + 1, context)
-                    && candidatePool.consume(ingredient)) {
-                pool.copyFrom(candidatePool);
-                plan.clear();
-                plan.addAll(candidatePlan);
-                return true;
-            }
+                if (simulateRecipe(player, candidate, candidatePool, candidatePlan, candidateMissing, visiting, ingredientPath, depth + 1, context)
+                        && candidatePool.consume(ingredient)) {
+                    pool.copyFrom(candidatePool);
+                    plan.clear();
+                    plan.addAll(candidatePlan);
+                    return true;
+                }
 
-            if (!candidateMissing.isEmpty()
-                    && (bestMissing == null || candidateMissing.totalCount() < bestMissing.totalCount())) {
-                bestMissing = candidateMissing;
+                if (!candidateMissing.isEmpty()
+                        && (bestMissing == null || candidateMissing.totalCount() < bestMissing.totalCount())) {
+                    bestMissing = candidateMissing;
+                }
             }
+        } finally {
+            ingredientPath.pop(ingredient);
         }
 
         if (bestMissing != null) {
             missing.addAll(bestMissing);
         } else {
             missing.addIngredient(ingredient);
+        }
+        return false;
+    }
+
+    private static boolean satisfyExactStack(
+            ServerPlayer player,
+            ItemStack target,
+            MaterialPool pool,
+            List<ResourceLocation> plan,
+            MissingMaterials missing,
+            Set<ResourceLocation> visiting,
+            NestedIngredientPath ingredientPath,
+            int depth,
+            NestedCraftingContext context
+    ) {
+        if (!pool.consumeExact(target).isEmpty()) {
+            return true;
+        }
+
+        if (ingredientPath.containsStack(target, true)) {
+            missing.addStack(target.copyWithCount(1));
+            return false;
+        }
+
+        MissingMaterials bestMissing = null;
+        ingredientPath.pushStack(target, true);
+        try {
+            for (ResourceLocation candidateId : context.findBrewingCandidates(player, target)) {
+                if (visiting.contains(candidateId)) {
+                    continue;
+                }
+
+                MaterialPool candidatePool = pool.copy();
+                List<ResourceLocation> candidatePlan = new ArrayList<>(plan);
+                MissingMaterials candidateMissing = new MissingMaterials();
+
+                if (simulateBrewingRecipe(player, candidateId, candidatePool, candidatePlan, candidateMissing, visiting, ingredientPath, depth + 1, context)
+                        && !candidatePool.consumeExact(target).isEmpty()) {
+                    pool.copyFrom(candidatePool);
+                    plan.clear();
+                    plan.addAll(candidatePlan);
+                    return true;
+                }
+
+                if (!candidateMissing.isEmpty()
+                        && (bestMissing == null || candidateMissing.totalCount() < bestMissing.totalCount())) {
+                    bestMissing = candidateMissing;
+                }
+            }
+        } finally {
+            ingredientPath.popStack(target, true);
+        }
+
+        if (bestMissing != null) {
+            missing.addAll(bestMissing);
+        } else {
+            missing.addStack(target.copyWithCount(1));
+        }
+        return false;
+    }
+
+    private static boolean satisfyItemStack(
+            ServerPlayer player,
+            ItemStack target,
+            MaterialPool pool,
+            List<ResourceLocation> plan,
+            MissingMaterials missing,
+            Set<ResourceLocation> visiting,
+            NestedIngredientPath ingredientPath,
+            int depth,
+            NestedCraftingContext context
+    ) {
+        if (!pool.consumeItem(target).isEmpty()) {
+            return true;
+        }
+
+        if (ingredientPath.containsStack(target, false)) {
+            missing.addStack(target.copyWithCount(1));
+            return false;
+        }
+
+        MissingMaterials bestMissing = null;
+        ingredientPath.pushStack(target, false);
+        try {
+            for (RecipeHolder<?> candidate : context.findNestedCraftingCandidates(player, target, false)) {
+                if (visiting.contains(candidate.id())) {
+                    continue;
+                }
+
+                MaterialPool candidatePool = pool.copy();
+                List<ResourceLocation> candidatePlan = new ArrayList<>(plan);
+                MissingMaterials candidateMissing = new MissingMaterials();
+
+                if (simulateRecipe(player, candidate, candidatePool, candidatePlan, candidateMissing, visiting, ingredientPath, depth + 1, context)
+                        && !candidatePool.consumeItem(target).isEmpty()) {
+                    pool.copyFrom(candidatePool);
+                    plan.clear();
+                    plan.addAll(candidatePlan);
+                    return true;
+                }
+
+                if (!candidateMissing.isEmpty()
+                        && (bestMissing == null || candidateMissing.totalCount() < bestMissing.totalCount())) {
+                    bestMissing = candidateMissing;
+                }
+            }
+        } finally {
+            ingredientPath.popStack(target, false);
+        }
+
+        if (bestMissing != null) {
+            missing.addAll(bestMissing);
+        } else {
+            missing.addStack(target.copyWithCount(1));
         }
         return false;
     }
@@ -514,6 +912,102 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             return new ArrayList<>(candidates.subList(0, MAX_NESTED_CANDIDATES_PER_INGREDIENT));
         }
         return candidates;
+    }
+
+    private static List<RecipeHolder<?>> findNestedCraftingCandidates(ServerPlayer player, ItemStack targetStack, boolean exactMatch) {
+        var server = player.getServer();
+        if (server == null || targetStack.isEmpty()) return List.of();
+
+        List<RecipeHolder<?>> candidates = new ArrayList<>();
+        for (RecipeHolder<?> holder : server.getRecipeManager().getRecipes()) {
+            Recipe<?> recipe = holder.value();
+            if (!RecipeTypeAdapters.supportsNestedCrafting(recipe)) {
+                continue;
+            }
+
+            if (!RecipeSupport.isUnlockedFor(player, recipe)) {
+                continue;
+            }
+
+            ItemStack result = recipe.getResultItem(server.registryAccess());
+            boolean matches = exactMatch
+                    ? ItemStack.isSameItemSameComponents(result, targetStack)
+                    : result.is(targetStack.getItem());
+            if (!result.isEmpty() && matches) {
+                candidates.add(holder);
+            }
+        }
+
+        candidates.sort(Comparator.comparing(holder -> holder.id().toString()));
+        if (candidates.size() > MAX_NESTED_CANDIDATES_PER_INGREDIENT) {
+            return new ArrayList<>(candidates.subList(0, MAX_NESTED_CANDIDATES_PER_INGREDIENT));
+        }
+        return candidates;
+    }
+
+    private static List<ResourceLocation> findBrewingCandidates(ServerPlayer player, ItemStack targetStack) {
+        if (targetStack.isEmpty()
+                || !RecipeUnlocks.isBuiltinRecipeTypeEnabled(BrewingRecipeSupport.RECIPE_TYPE_ID)
+                || !RecipeUnlocks.isUnlocked(player, BrewingRecipeSupport.RECIPE_TYPE_ID)) {
+            return List.of();
+        }
+
+        PotionBrewing potionBrewing = player.level().potionBrewing();
+        List<Item> containers = List.of(Items.POTION, Items.SPLASH_POTION, Items.LINGERING_POTION);
+        List<Item> ingredients = BuiltInRegistries.ITEM.stream()
+                .filter(item -> potionBrewing.isIngredient(new ItemStack(item)))
+                .toList();
+        List<Holder.Reference<Potion>> potions = player.registryAccess()
+                .registryOrThrow(Registries.POTION)
+                .holders()
+                .filter(potionBrewing::isBrewablePotion)
+                .toList();
+
+        List<ResourceLocation> candidates = new ArrayList<>();
+        for (Item container : containers) {
+            for (Holder.Reference<Potion> potion : potions) {
+                ItemStack input = PotionContents.createItemStack(container, potion);
+                for (Item ingredient : ingredients) {
+                    ItemStack ingredientStack = new ItemStack(ingredient);
+                    if (!potionBrewing.hasMix(input, ingredientStack)) {
+                        continue;
+                    }
+
+                    ItemStack result = potionBrewing.mix(ingredientStack, input);
+                    if (!result.isEmpty() && ItemStack.isSameItemSameComponents(result, targetStack)) {
+                        ResourceLocation id = BrewingRecipeSupport.buildRecipeId(input, ingredientStack);
+                        if (id != null) {
+                            candidates.add(id);
+                        }
+                    }
+                }
+            }
+        }
+
+        candidates.sort(Comparator.comparing(ResourceLocation::toString));
+        if (candidates.size() > MAX_NESTED_CANDIDATES_PER_INGREDIENT) {
+            return new ArrayList<>(candidates.subList(0, MAX_NESTED_CANDIDATES_PER_INGREDIENT));
+        }
+        return candidates;
+    }
+
+    private static BrewingCraftingData getBrewingCraftingData(ServerPlayer player, ResourceLocation recipeId) {
+        if (!RecipeUnlocks.isBuiltinRecipeTypeEnabled(BrewingRecipeSupport.RECIPE_TYPE_ID)) return null;
+        if (!RecipeUnlocks.isUnlocked(player, BrewingRecipeSupport.RECIPE_TYPE_ID)) return null;
+
+        Optional<BrewingRecipeSupport.BrewingRecipeKey> optionalKey = BrewingRecipeSupport.parseRecipeId(recipeId);
+        if (optionalKey.isEmpty()) return null;
+
+        BrewingRecipeSupport.BrewingRecipeKey key = optionalKey.get();
+        ItemStack input = BrewingRecipeSupport.createPotionStack(player.registryAccess(), key.containerId(), key.potionId());
+        ItemStack ingredient = BrewingRecipeSupport.createIngredientStack(key.ingredientId());
+        if (input.isEmpty() || ingredient.isEmpty()) return null;
+
+        PotionBrewing potionBrewing = player.level().potionBrewing();
+        if (!potionBrewing.hasMix(input, ingredient)) return null;
+
+        ItemStack result = potionBrewing.mix(ingredient, input);
+        return result.isEmpty() ? null : new BrewingCraftingData(input, ingredient.copyWithCount(1), result.copyWithCount(1));
     }
 
     private static boolean finishCrafting(ServerPlayer player, CraftingResult craftingResult) {
@@ -891,6 +1385,11 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         return (itemId != null ? itemId.toString() : "unknown:" + stack.getItem()) + stack.getComponentsPatch();
     }
 
+    private static String stackItemKey(ItemStack stack) {
+        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        return itemId != null ? itemId.toString() : "unknown:" + stack.getItem();
+    }
+
     private static class MaterialPool {
         private final List<ItemStack> stacks;
 
@@ -928,6 +1427,25 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         private ItemStack consumeStack(Ingredient ingredient) {
             for (ItemStack stack : stacks) {
                 if (!stack.isEmpty() && ingredient.test(stack)) {
+                    ItemStack consumed = stack.copyWithCount(1);
+                    stack.shrink(1);
+                    return consumed;
+                }
+            }
+            return ItemStack.EMPTY;
+        }
+
+        private ItemStack consumeExact(ItemStack expected) {
+            return consumeMatching(stack -> ItemStack.isSameItemSameComponents(stack, expected));
+        }
+
+        private ItemStack consumeItem(ItemStack expected) {
+            return consumeMatching(stack -> stack.is(expected.getItem()));
+        }
+
+        private ItemStack consumeMatching(Predicate<ItemStack> matcher) {
+            for (ItemStack stack : stacks) {
+                if (!stack.isEmpty() && matcher.test(stack)) {
                     ItemStack consumed = stack.copyWithCount(1);
                     stack.shrink(1);
                     return consumed;
@@ -984,8 +1502,69 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         }
     }
 
+    private static class NestedIngredientPath {
+        private final Map<String, Integer> itemDepthCounts = new HashMap<>();
+
+        private boolean contains(Ingredient ingredient) {
+            for (ItemStack option : ingredient.getItems()) {
+                if (itemDepthCounts.containsKey(stackItemKey(option))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private boolean containsStack(ItemStack stack, boolean exactMatch) {
+            return itemDepthCounts.containsKey(pathKey(stack, exactMatch));
+        }
+
+        private void push(Ingredient ingredient) {
+            for (ItemStack option : ingredient.getItems()) {
+                itemDepthCounts.merge(stackItemKey(option), 1, Integer::sum);
+            }
+        }
+
+        private void pushStack(ItemStack stack, boolean exactMatch) {
+            itemDepthCounts.merge(pathKey(stack, exactMatch), 1, Integer::sum);
+        }
+
+        private void pop(Ingredient ingredient) {
+            for (ItemStack option : ingredient.getItems()) {
+                String key = stackItemKey(option);
+                Integer count = itemDepthCounts.get(key);
+                if (count == null) {
+                    continue;
+                }
+                if (count <= 1) {
+                    itemDepthCounts.remove(key);
+                } else {
+                    itemDepthCounts.put(key, count - 1);
+                }
+            }
+        }
+
+        private void popStack(ItemStack stack, boolean exactMatch) {
+            String key = pathKey(stack, exactMatch);
+            Integer count = itemDepthCounts.get(key);
+            if (count == null) {
+                return;
+            }
+            if (count <= 1) {
+                itemDepthCounts.remove(key);
+            } else {
+                itemDepthCounts.put(key, count - 1);
+            }
+        }
+
+        private static String pathKey(ItemStack stack, boolean exactMatch) {
+            return exactMatch ? stackKey(stack) : stackItemKey(stack);
+        }
+    }
+
     private static class NestedCraftingContext {
         private final Map<String, List<RecipeHolder<?>>> candidateCache = new HashMap<>();
+        private final Map<String, List<RecipeHolder<?>>> stackCandidateCache = new HashMap<>();
+        private final Map<String, List<ResourceLocation>> brewingCandidateCache = new HashMap<>();
         private int remainingSteps = MAX_NESTED_SEARCH_STEPS;
 
         private boolean tryUseStep() {
@@ -998,6 +1577,15 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
 
         private List<RecipeHolder<?>> findNestedCraftingCandidates(ServerPlayer player, Ingredient ingredient) {
             return candidateCache.computeIfAbsent(buildIngredientKey(ingredient), ignored -> CraftRecipePacket.findNestedCraftingCandidates(player, ingredient));
+        }
+
+        private List<RecipeHolder<?>> findNestedCraftingCandidates(ServerPlayer player, ItemStack stack, boolean exactMatch) {
+            String key = (exactMatch ? "exact:" : "item:") + pathKey(stack, exactMatch);
+            return stackCandidateCache.computeIfAbsent(key, ignored -> CraftRecipePacket.findNestedCraftingCandidates(player, stack, exactMatch));
+        }
+
+        private List<ResourceLocation> findBrewingCandidates(ServerPlayer player, ItemStack stack) {
+            return brewingCandidateCache.computeIfAbsent(stackKey(stack), ignored -> CraftRecipePacket.findBrewingCandidates(player, stack));
         }
 
         private static String buildIngredientKey(Ingredient ingredient) {
@@ -1014,9 +1602,16 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             keys.sort(String::compareTo);
             return String.join("|", keys);
         }
+
+        private static String pathKey(ItemStack stack, boolean exactMatch) {
+            return exactMatch ? stackKey(stack) : stackItemKey(stack);
+        }
     }
 
     private record NestedCraftingSimulation(boolean success, List<ResourceLocation> plan, List<ItemStack> missingMaterials) {
+    }
+
+    private record BrewingCraftingData(ItemStack input, ItemStack ingredient, ItemStack result) {
     }
 
     private record MissingTreeAttempt(List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows, int missingCount) {
