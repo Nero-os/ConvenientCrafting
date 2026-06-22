@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.1 - 2026-06-22
+
+### Changed
+
+- Recipe unlock syncing now starts background recipe-index preloading immediately after newly unlocked workstation recipe types reach the client.
+
+### Fixed
+
+- Fixed the convenient crafting search box missing basic cursor editing, including left/right movement, Home/End, and cursor-aware insert, paste, Backspace, and Delete behavior.
+
 ## 1.5.0 - 2026-06-16
 
 ### Added

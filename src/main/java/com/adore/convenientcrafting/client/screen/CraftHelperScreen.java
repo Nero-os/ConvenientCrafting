@@ -76,6 +76,14 @@ public class CraftHelperScreen extends Screen {
     private static final int CRAFTABILITY_REFRESH_BATCH_SIZE = 12;
     private static final int SORT_CRAFTABILITY_WARMUP_RECIPES_PER_GROUP = 3;
     private static final int POST_CRAFT_REFRESH_TIMEOUT_TICKS = 10;
+    private static final int KEY_ENTER = 257;
+    private static final int KEY_ESCAPE = 256;
+    private static final int KEY_BACKSPACE = 259;
+    private static final int KEY_DELETE = 261;
+    private static final int KEY_RIGHT = 262;
+    private static final int KEY_LEFT = 263;
+    private static final int KEY_HOME = 268;
+    private static final int KEY_END = 269;
     private static Object cachedRecipeManager;
     private static int cachedRecipeCount = -1;
     private static int cachedUnlockRevision = -1;
@@ -93,6 +101,8 @@ public class CraftHelperScreen extends Screen {
     private boolean searchFocused = false;
     private boolean searchAllSelected = false;
     private String searchText = "";
+    private int searchCursor = 0;
+    private int searchViewStart = 0;
     private ItemStack hoveredRecipeStack = ItemStack.EMPTY;
     private final Deque<String> searchHistory = new ArrayDeque<>();
     private List<RecipeGroup> allRecipeGroups = new ArrayList<>();
@@ -1815,21 +1825,19 @@ public class CraftHelperScreen extends Screen {
         guiGraphics.fill(searchX + 1, controlsY + 2, searchX + searchWidth - 1, controlsY + searchHeight, searchBorder);
         guiGraphics.fill(searchX + 2, controlsY + 3, searchX + searchWidth - 2, controlsY + searchHeight - 1, 0xFF151820);
 
-        String visibleText = searchText;
         int textWidth = searchWidth - 10;
-        if (visibleText.isEmpty() && !searchFocused) {
+        if (searchText.isEmpty() && !searchFocused) {
             guiGraphics.drawString(font, "搜索物品", searchX + 5, controlsY + 6, 0xFF777777, false);
         } else {
-            if (font.width(visibleText) > textWidth) {
-                visibleText = font.plainSubstrByWidth(visibleText, textWidth);
-            }
+            String visibleText = getVisibleSearchText(textWidth);
             if (searchFocused && searchAllSelected && !visibleText.isEmpty()) {
                 int selectionWidth = Math.min(font.width(visibleText), textWidth);
                 guiGraphics.fill(searchX + 4, controlsY + 5, searchX + 5 + selectionWidth, controlsY + 15, 0xAA4F6CFF);
             }
             guiGraphics.drawString(font, visibleText, searchX + 5, controlsY + 6, 0xFFFFFFFF, false);
             if (searchFocused && !searchAllSelected && (System.currentTimeMillis() / 500L) % 2L == 0L) {
-                int cursorX = searchX + 5 + font.width(visibleText);
+                int visibleCursor = Math.max(searchViewStart, Math.min(searchCursor, searchViewStart + visibleText.length()));
+                int cursorX = searchX + 5 + font.width(searchText.substring(searchViewStart, visibleCursor));
                 guiGraphics.fill(cursorX, controlsY + 5, cursorX + 1, controlsY + 15, 0xFFFFFFFF);
             }
         }
@@ -1840,6 +1848,122 @@ public class CraftHelperScreen extends Screen {
      *
      * @param guiGraphics 图形绘制上下文
      */
+    private String getVisibleSearchText(int textWidth) {
+        ensureSearchCursorVisible(Math.max(1, textWidth));
+        String visibleText = searchText.substring(searchViewStart);
+        if (font.width(visibleText) > textWidth) {
+            visibleText = font.plainSubstrByWidth(visibleText, textWidth);
+        }
+        return visibleText;
+    }
+
+    private void ensureSearchCursorVisible(int textWidth) {
+        searchCursor = clampSearchIndex(searchCursor);
+        searchViewStart = clampSearchIndex(searchViewStart);
+        if (searchViewStart > searchCursor) {
+            searchViewStart = searchCursor;
+        }
+
+        while (searchViewStart < searchCursor && font.width(searchText.substring(searchViewStart, searchCursor)) > textWidth) {
+            searchViewStart = nextSearchIndex(searchViewStart);
+        }
+
+        while (searchViewStart > 0) {
+            int previousStart = previousSearchIndex(searchViewStart);
+            if (font.width(searchText.substring(previousStart, searchCursor)) > textWidth) {
+                break;
+            }
+            searchViewStart = previousStart;
+        }
+    }
+
+    private void setSearchCursorFromMouse(double mouseX, int searchX, int textWidth) {
+        int localX = Math.max(0, (int) Math.round(mouseX - searchX - 5));
+        String visibleText = getVisibleSearchText(textWidth);
+        int visibleEnd = searchViewStart + visibleText.length();
+        int nextCursor = searchViewStart;
+        int previousWidth = 0;
+
+        while (nextCursor < visibleEnd) {
+            int next = nextSearchIndex(nextCursor);
+            int nextWidth = font.width(searchText.substring(searchViewStart, next));
+            int midpoint = previousWidth + (nextWidth - previousWidth) / 2;
+            if (localX < midpoint) {
+                break;
+            }
+            nextCursor = next;
+            previousWidth = nextWidth;
+        }
+
+        setSearchCursor(nextCursor);
+    }
+
+    private void setSearchCursor(int cursor) {
+        searchCursor = clampSearchIndex(cursor);
+        searchAllSelected = false;
+        ensureSearchCursorVisible(getSearchTextWidth());
+    }
+
+    private int getSearchTextWidth() {
+        int searchWidth = Math.max(48, panelWidth - 116);
+        return Math.max(1, searchWidth - 10);
+    }
+
+    private int clampSearchIndex(int index) {
+        return Math.max(0, Math.min(index, searchText.length()));
+    }
+
+    private int previousSearchIndex(int index) {
+        int previous = clampSearchIndex(index);
+        if (previous <= 0) {
+            return 0;
+        }
+
+        previous--;
+        if (previous > 0
+                && Character.isLowSurrogate(searchText.charAt(previous))
+                && Character.isHighSurrogate(searchText.charAt(previous - 1))) {
+            previous--;
+        }
+        return previous;
+    }
+
+    private int nextSearchIndex(int index) {
+        int next = clampSearchIndex(index);
+        if (next >= searchText.length()) {
+            return searchText.length();
+        }
+
+        if (next + 1 < searchText.length()
+                && Character.isHighSurrogate(searchText.charAt(next))
+                && Character.isLowSurrogate(searchText.charAt(next + 1))) {
+            return next + 2;
+        }
+        return next + 1;
+    }
+
+    private int previousSearchWordIndex() {
+        int cursor = clampSearchIndex(searchCursor);
+        while (cursor > 0 && Character.isWhitespace(searchText.codePointBefore(cursor))) {
+            cursor = previousSearchIndex(cursor);
+        }
+        while (cursor > 0 && !Character.isWhitespace(searchText.codePointBefore(cursor))) {
+            cursor = previousSearchIndex(cursor);
+        }
+        return cursor;
+    }
+
+    private int nextSearchWordIndex() {
+        int cursor = clampSearchIndex(searchCursor);
+        while (cursor < searchText.length() && Character.isWhitespace(searchText.codePointAt(cursor))) {
+            cursor = nextSearchIndex(cursor);
+        }
+        while (cursor < searchText.length() && !Character.isWhitespace(searchText.codePointAt(cursor))) {
+            cursor = nextSearchIndex(cursor);
+        }
+        return cursor;
+    }
+
     private void drawNavigationButtons(GuiGraphics guiGraphics) {
         int totalPages = getTotalPages();
         if (totalPages > 1) {
@@ -1894,6 +2018,8 @@ public class CraftHelperScreen extends Screen {
             searchAllSelected = false;
             if (!searchText.isEmpty()) {
                 updateSearchText("");
+            } else {
+                setSearchCursor(0);
             }
             return true;
         }
@@ -1920,6 +2046,7 @@ public class CraftHelperScreen extends Screen {
         if (isInside(mouseX, mouseY, searchX, controlsY + 1, searchWidth, 18)) {
             searchFocused = true;
             searchAllSelected = false;
+            setSearchCursorFromMouse(mouseX, searchX, searchWidth - 10);
             return true;
         }
         searchFocused = false;
@@ -2119,6 +2246,8 @@ public class CraftHelperScreen extends Screen {
         if (searchFocused) {
             if (Screen.isSelectAll(keyCode)) {
                 searchAllSelected = !searchText.isEmpty();
+                searchCursor = searchText.length();
+                ensureSearchCursorVisible(getSearchTextWidth());
                 return true;
             }
             if (Screen.isCopy(keyCode)) {
@@ -2137,30 +2266,42 @@ public class CraftHelperScreen extends Screen {
             if (Screen.isPaste(keyCode)) {
                 String clipboard = Minecraft.getInstance().keyboardHandler.getClipboard();
                 if (!clipboard.isEmpty()) {
-                    replaceSelectionOrAppendSearchText(sanitizeSearchInput(clipboard));
+                    replaceSelectionOrInsertSearchText(sanitizeSearchInput(clipboard));
                 }
                 return true;
             }
-            if (searchAllSelected && (keyCode == 259 || keyCode == 261)) { // Backspace or Delete
-                updateSearchText("");
+            if (keyCode == KEY_LEFT) {
+                setSearchCursor(Screen.hasControlDown() ? previousSearchWordIndex() : previousSearchIndex(searchCursor));
                 return true;
             }
-            if (keyCode == 259 && !searchText.isEmpty()) { // Backspace
-                updateSearchText(searchText.substring(0, searchText.length() - 1));
+            if (keyCode == KEY_RIGHT) {
+                setSearchCursor(Screen.hasControlDown() ? nextSearchWordIndex() : nextSearchIndex(searchCursor));
                 return true;
             }
-            if (keyCode == 261 && !searchText.isEmpty()) { // Delete
-                updateSearchText("");
+            if (keyCode == KEY_HOME) {
+                setSearchCursor(0);
                 return true;
             }
-            if (keyCode == 257 || keyCode == 256) { // Enter or ESC
+            if (keyCode == KEY_END) {
+                setSearchCursor(searchText.length());
+                return true;
+            }
+            if (keyCode == KEY_BACKSPACE) {
+                deleteSearchTextBeforeCursor(Screen.hasControlDown());
+                return true;
+            }
+            if (keyCode == KEY_DELETE) {
+                deleteSearchTextAfterCursor(Screen.hasControlDown());
+                return true;
+            }
+            if (keyCode == KEY_ENTER || keyCode == KEY_ESCAPE) {
                 searchFocused = false;
                 searchAllSelected = false;
                 return true;
             }
         }
 
-        if (keyCode == 259 && goBackSearchHistory()) { // Backspace
+        if (keyCode == KEY_BACKSPACE && goBackSearchHistory()) {
             return true;
         }
 
@@ -2197,16 +2338,52 @@ public class CraftHelperScreen extends Screen {
             return super.charTyped(codePoint, modifiers);
         }
 
-        replaceSelectionOrAppendSearchText(String.valueOf(codePoint));
+        replaceSelectionOrInsertSearchText(String.valueOf(codePoint));
         return true;
     }
 
-    private void replaceSelectionOrAppendSearchText(String text) {
+    private void replaceSelectionOrInsertSearchText(String text) {
         if (text.isEmpty()) {
             return;
         }
 
-        updateSearchText(searchAllSelected ? text : searchText + text);
+        if (searchAllSelected) {
+            updateSearchText(text, text.length());
+            return;
+        }
+
+        int cursor = clampSearchIndex(searchCursor);
+        updateSearchText(searchText.substring(0, cursor) + text + searchText.substring(cursor), cursor + text.length());
+    }
+
+    private void deleteSearchTextBeforeCursor(boolean deleteWord) {
+        if (searchAllSelected) {
+            updateSearchText("");
+            return;
+        }
+
+        int cursor = clampSearchIndex(searchCursor);
+        if (cursor <= 0) {
+            return;
+        }
+
+        int deleteFrom = deleteWord ? previousSearchWordIndex() : previousSearchIndex(cursor);
+        updateSearchText(searchText.substring(0, deleteFrom) + searchText.substring(cursor), deleteFrom);
+    }
+
+    private void deleteSearchTextAfterCursor(boolean deleteWord) {
+        if (searchAllSelected) {
+            updateSearchText("");
+            return;
+        }
+
+        int cursor = clampSearchIndex(searchCursor);
+        if (cursor >= searchText.length()) {
+            return;
+        }
+
+        int deleteTo = deleteWord ? nextSearchWordIndex() : nextSearchIndex(cursor);
+        updateSearchText(searchText.substring(0, cursor) + searchText.substring(deleteTo), cursor);
     }
 
     private String sanitizeSearchInput(String text) {
@@ -2221,10 +2398,17 @@ public class CraftHelperScreen extends Screen {
     }
 
     private void updateSearchText(String text) {
+        updateSearchText(text, text.length());
+    }
+
+    private void updateSearchText(String text, int cursor) {
         searchText = text;
+        searchCursor = clampSearchIndex(cursor);
+        searchViewStart = Math.min(clampSearchIndex(searchViewStart), searchCursor);
         searchAllSelected = false;
         currentPage = 0;
         sortRecipes();
         refreshButtons();
+        ensureSearchCursorVisible(getSearchTextWidth());
     }
 }

@@ -1,6 +1,7 @@
 package com.adore.convenientcrafting.network;
 
 import com.adore.convenientcrafting.ConvenientCrafting;
+import com.adore.convenientcrafting.client.screen.CraftHelperScreen;
 import com.adore.convenientcrafting.recipe.unlock.ClientRecipeUnlocks;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -58,9 +59,13 @@ public record RecipeUnlockSyncPacket(
      */
     public static void handleClient(RecipeUnlockSyncPacket message, IPayloadContext context) {
         context.enqueueWork(() -> {
+            int unlockRevisionBefore = ClientRecipeUnlocks.getRevision();
             ClientRecipeUnlocks.setUnlockedRecipeTypes(message.unlockedRecipeTypeIds());
             ClientRecipeUnlocks.setEnabledBuiltinRecipeTypes(message.enabledBuiltinRecipeTypeIds());
             ClientRecipeUnlocks.setEnabledAdditionalRecipeTypes(message.enabledAdditionalRecipeTypeIds());
+            if (ClientRecipeUnlocks.getRevision() != unlockRevisionBefore) {
+                CraftHelperScreen.preloadRecipeIndex();
+            }
         });
     }
 }

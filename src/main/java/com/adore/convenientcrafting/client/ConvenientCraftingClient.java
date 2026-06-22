@@ -118,7 +118,7 @@ public class ConvenientCraftingClient {
         }
 
         if (mc.screen != null) {
-            CraftHelperScreen.stopBackgroundRecipeWork();
+            CraftHelperScreen.tickRecipeIndexPreload();
             return;
         }
 
