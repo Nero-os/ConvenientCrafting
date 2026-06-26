@@ -1,6 +1,7 @@
 package com.adore.convenientcrafting.network;
 
 import com.adore.convenientcrafting.ConvenientCrafting;
+import com.adore.convenientcrafting.config.Config;
 import com.adore.convenientcrafting.item.CategorizedBagItem;
 import com.adore.convenientcrafting.recipe.BrewingRecipeSupport;
 import com.adore.convenientcrafting.recipe.RecipeSupport;
@@ -1299,7 +1300,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
 
     private static void addAvailableMaterial(List<AvailableMaterial> available, MaterialSource source, ItemStack stack) {
         available.add(new AvailableMaterial(source, stack.copy()));
-        if (stack.getItem() instanceof CategorizedBagItem) {
+        if (Config.USE_BAG_CONTENTS_FOR_CRAFTING.get() && stack.getItem() instanceof CategorizedBagItem) {
             NonNullList<ItemStack> contents = CategorizedBagItem.getContents(stack);
             for (int i = 0; i < contents.size(); i++) {
                 ItemStack contained = contents.get(i);

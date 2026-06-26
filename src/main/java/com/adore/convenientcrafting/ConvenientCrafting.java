@@ -11,6 +11,7 @@ import com.adore.convenientcrafting.network.RecipeUnlockSyncPacket;
 import com.adore.convenientcrafting.network.SortInventoryPacket;
 import com.adore.convenientcrafting.recipe.unlock.RecipeUnlocks;
 import com.adore.convenientcrafting.registry.ModBlocks;
+import com.adore.convenientcrafting.registry.ModConditions;
 import com.adore.convenientcrafting.registry.ModCreativeModeTabs;
 import com.adore.convenientcrafting.registry.ModItems;
 import com.mojang.logging.LogUtils;
@@ -27,7 +28,7 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 /**
- * Convenient Crafting 模组的公共入口类。TODO：配置文件、收纳袋shift显示内部
+ * Convenient Crafting 模组的公共入口类。
  *
  * <p>负责注册方块、物品、创造模式标签、配置项和客户端到服务端的数据包处理器。</p>
  */
@@ -53,6 +54,7 @@ public class ConvenientCrafting {
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::registerPackets);
 
+        ModConditions.register(modEventBus);
         ModBlocks.register(modEventBus);
         ModItems.register(modEventBus);
         ModCreativeModeTabs.register(modEventBus);

@@ -1,6 +1,7 @@
 package com.adore.convenientcrafting.network;
 
 import com.adore.convenientcrafting.ConvenientCrafting;
+import com.adore.convenientcrafting.config.Config;
 import com.adore.convenientcrafting.inventory.InventorySorter;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -11,7 +12,14 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.DispenserMenu;
+import net.minecraft.world.inventory.HopperMenu;
+import net.minecraft.world.inventory.ShulkerBoxMenu;
+import net.minecraft.world.inventory.Slot;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+
+import java.util.List;
 
 /**
  * 客户端请求服务端整理背包或当前容器的数据包。
@@ -56,24 +64,47 @@ public record SortInventoryPacket(boolean isContainer, boolean compactMaterials)
      */
     public static void handleServer(SortInventoryPacket message, IPayloadContext context) {
         context.enqueueWork(() -> {
+            if (message.isContainer() ? !Config.ENABLE_CONTAINER_SORTING.get() : !Config.ENABLE_INVENTORY_SORTING.get()) {
+                return;
+            }
+
             if (context.player() instanceof ServerPlayer player) {
                 if (message.isContainer()) {
                     AbstractContainerMenu menu = player.containerMenu;
-                    for (int i = 0; i < menu.slots.size(); i++) {
-                        var slot = menu.slots.get(i);
+                    List<Slot> containerSlots = getSortableContainerSlots(player, menu);
+                    for (Slot slot : containerSlots) {
                         if (slot != null && !slot.getItem().isEmpty()) {
-                            InventorySorter.sortContainer(new SlotListContainer(menu));
+                            InventorySorter.sortContainer(new SlotListContainer(containerSlots));
                             break;
                         }
                     }
                 } else {
                     Inventory inventory = player.getInventory();
-                    InventorySorter.sortInventory(inventory, player, message.compactMaterials());
+                    boolean compactMaterials = message.compactMaterials() && Config.ENABLE_ALT_MATERIAL_COMPACTION.get();
+                    InventorySorter.sortInventory(inventory, player, compactMaterials);
                 }
 
                 player.containerMenu.broadcastChanges();
             }
         });
+    }
+
+    private static List<Slot> getSortableContainerSlots(ServerPlayer player, AbstractContainerMenu menu) {
+        if (!isSortableStorageMenu(menu)) {
+            return List.of();
+        }
+
+        Inventory inventory = player.getInventory();
+        return menu.slots.stream()
+                .filter(slot -> slot.container != inventory)
+                .toList();
+    }
+
+    private static boolean isSortableStorageMenu(AbstractContainerMenu menu) {
+        return menu instanceof ChestMenu
+                || menu instanceof ShulkerBoxMenu
+                || menu instanceof HopperMenu
+                || menu instanceof DispenserMenu;
     }
 
     /**
@@ -83,20 +114,20 @@ public record SortInventoryPacket(boolean isContainer, boolean compactMaterials)
      * 该适配器负责把 get、set、remove 等容器操作转发到菜单槽位上。</p>
      */
     private static class SlotListContainer implements net.minecraft.world.Container {
-        private final AbstractContainerMenu menu;
+        private final List<Slot> slots;
 
         /**
          * 创建菜单槽位容器适配器。
          *
-         * @param menu 要适配的容器菜单
+         * @param slots 要适配的容器槽位
          */
-        public SlotListContainer(AbstractContainerMenu menu) {
-            this.menu = menu;
+        public SlotListContainer(List<Slot> slots) {
+            this.slots = slots;
         }
 
         @Override
         public int getContainerSize() {
-            return menu.slots.size();
+            return slots.size();
         }
 
         @Override
@@ -106,8 +137,8 @@ public record SortInventoryPacket(boolean isContainer, boolean compactMaterials)
 
         @Override
         public net.minecraft.world.item.ItemStack getItem(int slot) {
-            if (slot >= 0 && slot < menu.slots.size()) {
-                var s = menu.slots.get(slot);
+            if (slot >= 0 && slot < slots.size()) {
+                Slot s = slots.get(slot);
                 return s != null ? s.getItem() : net.minecraft.world.item.ItemStack.EMPTY;
             }
             return net.minecraft.world.item.ItemStack.EMPTY;
@@ -115,8 +146,8 @@ public record SortInventoryPacket(boolean isContainer, boolean compactMaterials)
 
         @Override
         public net.minecraft.world.item.ItemStack removeItem(int slot, int amount) {
-            if (slot >= 0 && slot < menu.slots.size()) {
-                var s = menu.slots.get(slot);
+            if (slot >= 0 && slot < slots.size()) {
+                Slot s = slots.get(slot);
                 if (s != null) {
                     return s.remove(amount);
                 }
@@ -126,8 +157,8 @@ public record SortInventoryPacket(boolean isContainer, boolean compactMaterials)
 
         @Override
         public net.minecraft.world.item.ItemStack removeItemNoUpdate(int slot) {
-            if (slot >= 0 && slot < menu.slots.size()) {
-                var s = menu.slots.get(slot);
+            if (slot >= 0 && slot < slots.size()) {
+                Slot s = slots.get(slot);
                 if (s != null) {
                     return s.remove(s.getItem().getCount());
                 }
@@ -137,8 +168,8 @@ public record SortInventoryPacket(boolean isContainer, boolean compactMaterials)
 
         @Override
         public void setItem(int slot, net.minecraft.world.item.ItemStack stack) {
-            if (slot >= 0 && slot < menu.slots.size()) {
-                var s = menu.slots.get(slot);
+            if (slot >= 0 && slot < slots.size()) {
+                Slot s = slots.get(slot);
                 if (s != null) {
                     s.set(stack);
                 }

@@ -18,6 +18,54 @@ public class Config {
      */
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
+    public static final ModConfigSpec.BooleanValue ENABLE_INVENTORY_SORTING = BUILDER
+            .comment(
+                    "Whether to enable the player inventory sort button and middle-click inventory sorting.",
+                    "Disable this to avoid conflicts with dedicated inventory sorting mods."
+            )
+            .translation("convenientcrafting.configuration.enableInventorySorting")
+            .define("enableInventorySorting", true);
+
+    public static final ModConfigSpec.BooleanValue ENABLE_CONTAINER_SORTING = BUILDER
+            .comment(
+                    "Whether to enable storage container sort buttons and middle-click container sorting.",
+                    "Applies to supported storage containers such as chests, barrels, and shulker boxes."
+            )
+            .translation("convenientcrafting.configuration.enableContainerSorting")
+            .define("enableContainerSorting", true);
+
+    public static final ModConfigSpec.BooleanValue ENABLE_CATEGORY_BAGS = BUILDER
+            .comment(
+                    "Whether category bag entry points are enabled.",
+                    "When disabled, category bags stay registered for save compatibility, but are hidden from the creative tab and their recipes are disabled."
+            )
+            .translation("convenientcrafting.configuration.enableCategoryBags")
+            .define("enableCategoryBags", true);
+
+    public static final ModConfigSpec.BooleanValue ENABLE_BAG_AUTO_PICKUP = BUILDER
+            .comment(
+                    "Whether picked-up matching items are automatically inserted into category bags in the player inventory.",
+                    "When disabled, picked-up items use the normal vanilla inventory pickup flow."
+            )
+            .translation("convenientcrafting.configuration.enableBagAutoPickup")
+            .define("enableBagAutoPickup", true);
+
+    public static final ModConfigSpec.BooleanValue USE_BAG_CONTENTS_FOR_CRAFTING = BUILDER
+            .comment(
+                    "Whether items stored inside category bags count as available materials for Convenient Crafting.",
+                    "When disabled, Convenient Crafting only uses visible inventory and container stacks."
+            )
+            .translation("convenientcrafting.configuration.useBagContentsForCrafting")
+            .define("useBagContentsForCrafting", true);
+
+    public static final ModConfigSpec.BooleanValue ENABLE_ALT_MATERIAL_COMPACTION = BUILDER
+            .comment(
+                    "Whether Alt inventory sorting compacts mineral materials using repeated-material crafting recipes.",
+                    "When disabled, Alt sorting behaves like normal inventory sorting."
+            )
+            .translation("convenientcrafting.configuration.enableAltMaterialCompaction")
+            .define("enableAltMaterialCompaction", true);
+
     /**
      * 内置支持的一键合成工作台配方类型。
      */

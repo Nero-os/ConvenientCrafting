@@ -2,6 +2,7 @@ package com.adore.convenientcrafting.client;
 
 import com.adore.convenientcrafting.ConvenientCrafting;
 import com.adore.convenientcrafting.client.screen.CraftHelperScreen;
+import com.adore.convenientcrafting.config.Config;
 import com.adore.convenientcrafting.item.CategorizedBagItem;
 import com.adore.convenientcrafting.network.SortInventoryPacket;
 import com.adore.convenientcrafting.registry.ModItems;
@@ -16,6 +17,13 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.renderer.item.ItemProperties;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.DispenserMenu;
+import net.minecraft.world.inventory.HopperMenu;
+import net.minecraft.world.inventory.ShulkerBoxMenu;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -35,6 +43,8 @@ import net.neoforged.neoforge.client.settings.KeyModifier;
 import net.neoforged.neoforge.common.util.Lazy;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
+
+import java.util.List;
 
 /**
  * Convenient Crafting 的客户端入口类。
@@ -175,40 +185,105 @@ public class ConvenientCraftingClient {
     static void onScreenInit(ScreenEvent.Init.Post event) {
         Screen screen = event.getScreen();
 
-        if (screen instanceof InventoryScreen inventoryScreen) {
+        if (isInventorySortingEnabled() && screen instanceof InventoryScreen inventoryScreen) {
             int guiLeft = inventoryScreen.getGuiLeft();
             int guiTop = inventoryScreen.getGuiTop();
             int x = guiLeft + PLAYER_INVENTORY_LAST_COLUMN_RIGHT - SORT_BUTTON_SIZE;
             int y = guiTop + PLAYER_INVENTORY_TOP - SORT_BUTTON_SIZE - 2;
 
-            event.addListener(new SortInventoryButton(x, y, SORT_BUTTON_SIZE, SORT_BUTTON_SIZE));
+            event.addListener(new SortInventoryButton(x, y, SORT_BUTTON_SIZE, SORT_BUTTON_SIZE, false));
+            return;
+        }
+
+        if (isContainerSortingEnabled() && screen instanceof AbstractContainerScreen<?> containerScreen) {
+            List<Slot> containerSlots = getSortableContainerSlots(containerScreen.getMenu());
+            if (!containerSlots.isEmpty()) {
+                int guiLeft = containerScreen.getGuiLeft();
+                int guiTop = containerScreen.getGuiTop();
+                int maxSlotRight = containerSlots.stream()
+                        .mapToInt(slot -> slot.x + 16)
+                        .max()
+                        .orElse(0);
+                int topSlotY = containerSlots.stream()
+                        .mapToInt(slot -> slot.y)
+                        .min()
+                        .orElse(0);
+                int x = guiLeft + maxSlotRight - SORT_BUTTON_SIZE;
+                int y = guiTop + topSlotY - SORT_BUTTON_SIZE - 2;
+
+                event.addListener(new SortInventoryButton(x, y, SORT_BUTTON_SIZE, SORT_BUTTON_SIZE, true));
+            }
         }
     }
 
     @SubscribeEvent
     static void onInventoryMiddleClick(ScreenEvent.MouseButtonPressed.Pre event) {
-        if (event.getScreen() instanceof InventoryScreen && event.getButton() == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
-            sendSortInventoryPacket(Screen.hasAltDown());
+        if (event.getButton() != GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
+            return;
+        }
+
+        Screen screen = event.getScreen();
+        if (isInventorySortingEnabled() && screen instanceof InventoryScreen) {
+            sendSortInventoryPacket(false, Screen.hasAltDown());
+            event.setCanceled(true);
+        } else if (isContainerSortingEnabled() && screen instanceof AbstractContainerScreen<?> containerScreen && !getSortableContainerSlots(containerScreen.getMenu()).isEmpty()) {
+            sendSortInventoryPacket(true, Screen.hasAltDown());
             event.setCanceled(true);
         }
     }
 
-    private static void sendSortInventoryPacket(boolean compactMaterials) {
-        PacketDistributor.sendToServer(new SortInventoryPacket(false, compactMaterials));
+    private static void sendSortInventoryPacket(boolean sortContainer, boolean compactMaterials) {
+        if (sortContainer ? !isContainerSortingEnabled() : !isInventorySortingEnabled()) {
+            return;
+        }
+
+        boolean shouldCompactMaterials = !sortContainer && compactMaterials && isAltMaterialCompactionEnabled();
+        PacketDistributor.sendToServer(new SortInventoryPacket(sortContainer, shouldCompactMaterials));
+    }
+
+    private static boolean isInventorySortingEnabled() {
+        return Config.ENABLE_INVENTORY_SORTING.get();
+    }
+
+    private static boolean isContainerSortingEnabled() {
+        return Config.ENABLE_CONTAINER_SORTING.get();
+    }
+
+    private static boolean isAltMaterialCompactionEnabled() {
+        return Config.ENABLE_ALT_MATERIAL_COMPACTION.get();
+    }
+
+    private static List<Slot> getSortableContainerSlots(AbstractContainerMenu menu) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || !isSortableStorageMenu(menu)) {
+            return List.of();
+        }
+
+        Inventory inventory = mc.player.getInventory();
+        return menu.slots.stream()
+                .filter(slot -> slot.container != inventory)
+                .toList();
+    }
+
+    private static boolean isSortableStorageMenu(AbstractContainerMenu menu) {
+        return menu instanceof ChestMenu
+                || menu instanceof ShulkerBoxMenu
+                || menu instanceof HopperMenu
+                || menu instanceof DispenserMenu;
     }
 
     private static class SortInventoryButton extends Button {
-        private SortInventoryButton(int x, int y, int width, int height) {
+        private SortInventoryButton(int x, int y, int width, int height, boolean sortContainer) {
             super(
                     x,
                     y,
                     width,
                     height,
-                    Component.translatable("button.convenientcrafting.sort"),
-                    button -> sendSortInventoryPacket(Screen.hasAltDown()),
+                    Component.translatable(sortContainer ? "button.convenientcrafting.sort_container" : "button.convenientcrafting.sort"),
+                    button -> sendSortInventoryPacket(sortContainer, Screen.hasAltDown()),
                     DEFAULT_NARRATION
             );
-            setTooltip(Tooltip.create(Component.translatable("tooltip.convenientcrafting.sort_inventory")));
+            setTooltip(Tooltip.create(Component.translatable(sortContainer ? "tooltip.convenientcrafting.sort_container" : "tooltip.convenientcrafting.sort_inventory")));
         }
 
         @Override

@@ -1,5 +1,6 @@
 package com.adore.convenientcrafting.client.screen;
 
+import com.adore.convenientcrafting.config.Config;
 import com.adore.convenientcrafting.network.CraftRecipePacket;
 import com.adore.convenientcrafting.item.CategorizedBagItem;
 import com.adore.convenientcrafting.recipe.BrewingRecipeSupport;
@@ -116,6 +117,7 @@ public class CraftHelperScreen extends Screen {
     private final Set<String> pendingDuplicateRecipes = new HashSet<>();
     private final Map<String, List<RecipeEntry>> pendingGroupedRecipes = new LinkedHashMap<>();
     private final List<RecipeEntry> pendingCraftabilityRefresh = new ArrayList<>();
+    private boolean cachedUseBagContentsForCrafting = true;
     private final boolean backgroundIndexBuild;
     private Object loadingRecipeManager;
     private int loadingRecipeCount = -1;
@@ -509,6 +511,7 @@ public class CraftHelperScreen extends Screen {
     private void refreshInventoryCache() {
         cachedInventoryCounts.clear();
         cachedAvailableMaterials.clear();
+        cachedUseBagContentsForCrafting = useBagContentsForCrafting();
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
 
@@ -517,7 +520,9 @@ public class CraftHelperScreen extends Screen {
             if (!stack.isEmpty()) {
                 String key = buildItemKey(stack);
                 cachedInventoryCounts.merge(key, stack.getCount(), Integer::sum);
-                addContainedBagCounts(stack);
+                if (cachedUseBagContentsForCrafting) {
+                    addContainedBagCounts(stack);
+                }
                 addAvailableStack(cachedAvailableMaterials, stack);
             }
         }
@@ -637,6 +642,7 @@ public class CraftHelperScreen extends Screen {
         }
 
         int fingerprint = 1;
+        fingerprint = 31 * fingerprint + Boolean.hashCode(useBagContentsForCrafting());
         for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
             fingerprint = 31 * fingerprint + stackFingerprint(i, mc.player.getInventory().getItem(i));
         }
@@ -1476,7 +1482,7 @@ public class CraftHelperScreen extends Screen {
      */
     private List<ItemStack> getInventorySnapshot() {
         List<ItemStack> available = new ArrayList<>();
-        if (!cachedAvailableMaterials.isEmpty()) {
+        if (!cachedAvailableMaterials.isEmpty() && cachedUseBagContentsForCrafting == useBagContentsForCrafting()) {
             for (ItemStack stack : cachedAvailableMaterials) {
                 available.add(stack.copy());
             }
@@ -1508,13 +1514,17 @@ public class CraftHelperScreen extends Screen {
 
     private static void addAvailableStack(List<ItemStack> available, ItemStack stack) {
         available.add(stack.copy());
-        if (stack.getItem() instanceof CategorizedBagItem) {
+        if (useBagContentsForCrafting() && stack.getItem() instanceof CategorizedBagItem) {
             for (ItemStack contained : CategorizedBagItem.getContents(stack)) {
                 if (!contained.isEmpty()) {
                     available.add(contained.copy());
                 }
             }
         }
+    }
+
+    private static boolean useBagContentsForCrafting() {
+        return Config.USE_BAG_CONTENTS_FOR_CRAFTING.get();
     }
 
     /**

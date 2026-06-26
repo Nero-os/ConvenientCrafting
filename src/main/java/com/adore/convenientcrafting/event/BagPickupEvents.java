@@ -2,6 +2,7 @@ package com.adore.convenientcrafting.event;
 
 import java.util.UUID;
 
+import com.adore.convenientcrafting.config.Config;
 import com.adore.convenientcrafting.item.CategorizedBagItem;
 import com.adore.convenientcrafting.recipe.unlock.RecipeUnlocks;
 
@@ -28,6 +29,10 @@ public class BagPickupEvents {
      */
     @SubscribeEvent
     public void onItemPickup(ItemEntityPickupEvent.Pre event) {
+        if (!Config.ENABLE_BAG_AUTO_PICKUP.get()) {
+            return;
+        }
+
         Player player = event.getPlayer();
         ItemEntity itemEntity = event.getItemEntity();
         UUID target = itemEntity.getTarget();
