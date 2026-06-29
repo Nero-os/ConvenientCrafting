@@ -83,6 +83,12 @@ public final class RecipeUnlocks {
         return List.copyOf(recipeTypeIds);
     }
 
+    public static Map<ResourceLocation, List<ResourceLocation>> getUnlockRulesSnapshot() {
+        Map<ResourceLocation, List<ResourceLocation>> copy = new HashMap<>();
+        getUnlockRules().forEach((typeId, itemIds) -> copy.put(typeId, List.copyOf(itemIds)));
+        return Map.copyOf(copy);
+    }
+
     /**
      * 判断玩家是否已经解锁指定配方类型。
      *

@@ -7,6 +7,7 @@
 - Storage containers can now be sorted directly. Chests, barrels, shulker boxes, hoppers, dispensers, and droppers get a compact sort button near the top-right of their storage grid, and middle-clicking inside the container also sorts it.
 - Added separate config toggles for player inventory sorting, container sorting, and Alt material compaction. This makes it easier to use Convenient Crafting alongside dedicated inventory-sorting mods.
 - Added separate config toggles for category bags. Modpack authors can now hide bag items from the creative tab, disable bag recipes, turn off automatic pickup into bags, or decide whether bag contents count as materials for Convenient Crafting.
+- Added read-only diagnostic commands for modpack authors to inspect configured recipe types, recipe unlock rules, matching result recipes, and whether a recipe should appear in the Convenient Crafting panel.
 
 ### Changed
 
