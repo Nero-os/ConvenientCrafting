@@ -22,6 +22,8 @@
   "convenientcrafting.configuration.enabledBuiltinRecipeTypes.tooltip": "Controls the vanilla workstation recipe types that Convenient Crafting supports by default.\nDefault enabled ids: minecraft:crafting, minecraft:smithing, minecraft:brewing, minecraft:stonecutting.\nRemove an id from this list to disable that workstation type.",
   "convenientcrafting.configuration.additionalRecipeTypes": "Additional Recipe Types",
   "convenientcrafting.configuration.additionalRecipeTypes.tooltip": "Extra recipe type ids for modpack authors.\nOnly enable recipe types that are safe to craft directly from ingredients and a fixed result.\nExtra recipe types also need a matching unlock rule before players can unlock them.\nExamples: create:mechanical_crafting, malum:spirit_infusion.",
+  "convenientcrafting.configuration.defaultUnlockedRecipeTypes": "Default Unlocked Recipe Types",
+  "convenientcrafting.configuration.defaultUnlockedRecipeTypes.tooltip": "Recipe type ids that are available to every player without obtaining a workstation first.\nThese are not saved into player data; changing this config affects existing worlds after the next sync.\nDefault: minecraft:crafting.",
   "convenientcrafting.configuration.recipeTypeUnlockItems": "Recipe Type Unlock Items",
   "convenientcrafting.configuration.recipeTypeUnlockItems.tooltip": "Configures which items permanently unlock each recipe type for players.\nFormat: recipe_type=item_id,item_id.\nBuilt-in minecraft:crafting, minecraft:smithing, minecraft:brewing, and minecraft:stonecutting use default unlock rules.\nExamples: malum:spirit_infusion=malum:spirit_altar, create:mechanical_crafting=create:mechanical_crafter.",
 

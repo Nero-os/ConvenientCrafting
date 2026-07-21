@@ -79,6 +79,10 @@ public final class RecipeUnlocks {
                 .map(ResourceLocation::tryParse)
                 .filter(id -> id != null)
                 .forEach(recipeTypeIds::add);
+        getDefaultUnlockedRecipeTypeIds().stream()
+                .map(ResourceLocation::tryParse)
+                .filter(id -> id != null)
+                .forEach(recipeTypeIds::add);
         recipeTypeIds.addAll(getUnlockRules().keySet());
         return List.copyOf(recipeTypeIds);
     }
@@ -97,7 +101,7 @@ public final class RecipeUnlocks {
      * @return 已解锁时返回 {@code true}
      */
     public static boolean isUnlocked(Player player, ResourceLocation recipeTypeId) {
-        return getUnlockedTypes(player).contains(normalize(recipeTypeId));
+        return isDefaultUnlockedRecipeType(recipeTypeId) || getUnlockedTypes(player).contains(normalize(recipeTypeId));
     }
 
     /**
@@ -121,7 +125,7 @@ public final class RecipeUnlocks {
 
         for (Map.Entry<ResourceLocation, List<ResourceLocation>> entry : unlockRules.entrySet()) {
             String recipeTypeId = normalize(entry.getKey());
-            if (unlockedTypes.contains(recipeTypeId)) {
+            if (unlockedTypes.contains(recipeTypeId) || isDefaultUnlockedRecipeType(entry.getKey())) {
                 continue;
             }
 
@@ -209,7 +213,9 @@ public final class RecipeUnlocks {
 
         for (Map.Entry<ResourceLocation, List<ResourceLocation>> entry : unlockRules.entrySet()) {
             String recipeTypeId = normalize(entry.getKey());
-            if (!unlockedTypes.contains(recipeTypeId) && entry.getValue().contains(itemId)) {
+            if (!unlockedTypes.contains(recipeTypeId)
+                    && !isDefaultUnlockedRecipeType(entry.getKey())
+                    && entry.getValue().contains(itemId)) {
                 unlockedTypes.add(recipeTypeId);
                 changed = true;
                 if (notify) {
@@ -328,7 +334,7 @@ public final class RecipeUnlocks {
 
     private static void syncToClient(ServerPlayer player) {
         PacketDistributor.sendToPlayer(player, new RecipeUnlockSyncPacket(
-                new ArrayList<>(getUnlockedTypes(player)),
+                new ArrayList<>(getEffectiveUnlockedTypes(player)),
                 getEnabledBuiltinRecipeTypeIds(),
                 getEnabledAdditionalRecipeTypeIds()
         ));
@@ -351,6 +357,23 @@ public final class RecipeUnlocks {
         return Config.ADDITIONAL_RECIPE_TYPES.get().stream()
                 .map(value -> value.toLowerCase(Locale.ROOT))
                 .toList();
+    }
+
+    private static List<String> getDefaultUnlockedRecipeTypeIds() {
+        return Config.DEFAULT_UNLOCKED_RECIPE_TYPES.get().stream()
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .toList();
+    }
+
+    private static boolean isDefaultUnlockedRecipeType(ResourceLocation recipeTypeId) {
+        String normalized = normalize(recipeTypeId);
+        return getDefaultUnlockedRecipeTypeIds().stream().anyMatch(normalized::equals);
+    }
+
+    private static Set<String> getEffectiveUnlockedTypes(Player player) {
+        Set<String> unlockedTypes = getUnlockedTypes(player);
+        unlockedTypes.addAll(getDefaultUnlockedRecipeTypeIds());
+        return unlockedTypes;
     }
 
     private static Set<String> getUnlockedTypes(Player player) {
