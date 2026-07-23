@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.6.0 - 2026-06-25
+## 1.6.0 - 2026-07-22
 
 ### Added
 
@@ -15,6 +15,12 @@
 - Alt sorting's mineral compression can now be disabled separately. When disabled, Alt sorting behaves like normal inventory sorting.
 - Convenient Crafting can now be configured to ignore materials stored inside category bags, while still allowing the bags themselves to exist.
 - Container sorting only affects the opened container's storage slots, so sorting a chest or barrel will not rearrange the player's inventory.
+
+### Fixed
+
+- Fixed Convenient Crafting treating armor and empty offhand slots as ordinary inventory space, which could consume materials without storing the crafted result when the main inventory was full.
+- Fixed equipped armor being considered available crafting material.
+- Fixed crafting-container remainders such as buckets and bottles being consumed instead of returned to the player.
 
 ## 1.5.1 - 2026-06-22
 

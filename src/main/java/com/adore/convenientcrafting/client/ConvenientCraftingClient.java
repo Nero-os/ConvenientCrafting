@@ -89,8 +89,6 @@ public class ConvenientCraftingClient {
      */
     @SubscribeEvent
     static void onClientSetup(FMLClientSetupEvent event) {
-        ConvenientCrafting.LOGGER.info("HELLO FROM CLIENT SETUP");
-        ConvenientCrafting.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
         event.enqueueWork(ConvenientCraftingClient::registerBagItemProperties);
     }
 

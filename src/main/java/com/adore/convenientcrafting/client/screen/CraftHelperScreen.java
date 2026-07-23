@@ -19,6 +19,7 @@ import net.minecraft.network.chat.FormattedText;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
@@ -515,7 +516,7 @@ public class CraftHelperScreen extends Screen {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
 
-        for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
+        for (int i = 0; i < Inventory.INVENTORY_SIZE; i++) {
             ItemStack stack = mc.player.getInventory().getItem(i);
             if (!stack.isEmpty()) {
                 String key = buildItemKey(stack);
@@ -1492,7 +1493,7 @@ public class CraftHelperScreen extends Screen {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return available;
 
-        for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
+        for (int i = 0; i < Inventory.INVENTORY_SIZE; i++) {
             ItemStack stack = mc.player.getInventory().getItem(i);
             if (!stack.isEmpty()) {
                 // 使用副本参与匹配，避免客户端预览阶段直接修改玩家背包。

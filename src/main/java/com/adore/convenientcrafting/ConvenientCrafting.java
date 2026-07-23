@@ -17,13 +17,11 @@ import com.adore.convenientcrafting.registry.ModItems;
 import com.mojang.logging.LogUtils;
 
 import net.neoforged.bus.api.IEventBus;
-import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
@@ -59,7 +57,6 @@ public class ConvenientCrafting {
         ModItems.register(modEventBus);
         ModCreativeModeTabs.register(modEventBus);
 
-        NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(new BagPickupEvents());
         NeoForge.EVENT_BUS.register(new RecipeUnlocks());
         NeoForge.EVENT_BUS.register(new RecipeUnlockCommands());
@@ -103,15 +100,5 @@ public class ConvenientCrafting {
      */
     private void commonSetup(FMLCommonSetupEvent event) {
         LOGGER.info("Convenient Crafting common setup complete.");
-    }
-
-    /**
-     * 服务器启动时的调试日志事件。
-     *
-     * @param event 服务器启动事件
-     */
-    @SubscribeEvent
-    public void onServerStarting(ServerStartingEvent event) {
-        LOGGER.info("HELLO from server starting");
     }
 }

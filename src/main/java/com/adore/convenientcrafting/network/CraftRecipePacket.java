@@ -1022,7 +1022,8 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
 
         // Give result
         for (ItemStack result : craftingResult.results()) {
-            player.getInventory().add(result.copy());
+            // Preserve any unexpected remainder instead of silently deleting crafted output.
+            player.getInventory().placeItemBackInInventory(result.copy());
         }
 
         return true;
@@ -1140,7 +1141,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         List<IngredientUse> consumed = new ArrayList<>();
         consumed.add(ingredient);
         consumed.addAll(inputs);
-        return new CraftingResult(results, consumed);
+        return CraftingResult.of(results, consumed);
     }
 
     private static List<IngredientUse> matchIngredients(ServerPlayer player, List<Ingredient> ingredients) {
@@ -1194,7 +1195,8 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         int maxStack = result.getMaxStackSize();
 
         // 先统计可合并到现有同类堆叠中的空间。
-        for (ItemStack stack : simulatedInventory) {
+        for (int i = 0; i < Inventory.INVENTORY_SIZE; i++) {
+            ItemStack stack = simulatedInventory.get(i);
             if (!stack.isEmpty() && ItemStack.isSameItemSameComponents(stack, result)) {
                 int space = maxStack - stack.getCount();
                 if (space > 0) {
@@ -1206,8 +1208,21 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             }
         }
 
+        // Vanilla may merge into an existing offhand stack, but never treats an empty
+        // offhand slot or an armor slot as general inventory storage.
+        ItemStack offhand = simulatedInventory.get(Inventory.SLOT_OFFHAND);
+        if (!offhand.isEmpty() && ItemStack.isSameItemSameComponents(offhand, result)) {
+            int space = maxStack - offhand.getCount();
+            if (space > 0) {
+                int moved = Math.min(remaining, space);
+                offhand.grow(moved);
+                remaining -= moved;
+                if (remaining <= 0) return true;
+            }
+        }
+
         // 现有堆叠不够时，再把空槽按完整最大堆叠容量计入。
-        for (int i = 0; i < simulatedInventory.size(); i++) {
+        for (int i = 0; i < Inventory.INVENTORY_SIZE; i++) {
             if (simulatedInventory.get(i).isEmpty()) {
                 int moved = Math.min(remaining, maxStack);
                 simulatedInventory.set(i, result.copyWithCount(moved));
@@ -1278,7 +1293,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         List<AvailableMaterial> available = new ArrayList<>();
         Inventory inventory = player.getInventory();
 
-        for (int i = 0; i < inventory.getContainerSize(); i++) {
+        for (int i = 0; i < Inventory.INVENTORY_SIZE; i++) {
             ItemStack stack = inventory.getItem(i);
             if (!stack.isEmpty()) {
                 addAvailableMaterial(available, MaterialSource.inventory(i), stack);
@@ -1654,7 +1669,21 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
      */
     private record CraftingResult(List<ItemStack> results, List<IngredientUse> ingredients) {
         private static CraftingResult single(ItemStack result, List<IngredientUse> ingredients) {
-            return new CraftingResult(List.of(result), ingredients);
+            return of(List.of(result), ingredients);
+        }
+
+        private static CraftingResult of(List<ItemStack> results, List<IngredientUse> ingredients) {
+            List<ItemStack> allResults = new ArrayList<>(results);
+            for (IngredientUse ingredient : ingredients) {
+                ItemStack consumed = ingredient.stack();
+                if (consumed.hasCraftingRemainingItem()) {
+                    ItemStack remainder = consumed.getCraftingRemainingItem();
+                    if (!remainder.isEmpty()) {
+                        allResults.add(remainder.copy());
+                    }
+                }
+            }
+            return new CraftingResult(List.copyOf(allResults), ingredients);
         }
     }
 
