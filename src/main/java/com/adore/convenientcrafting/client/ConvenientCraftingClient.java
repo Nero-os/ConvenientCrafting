@@ -127,11 +127,14 @@ public class ConvenientCraftingClient {
 
         if (mc.screen != null) {
             CraftHelperScreen.tickRecipeIndexPreload();
+            CraftHelperScreen.tickCraftabilitySortPreload();
             return;
         }
 
         CraftHelperScreen.preloadRecipeIndex();
         CraftHelperScreen.tickRecipeIndexPreload();
+        CraftHelperScreen.preloadCraftabilitySort();
+        CraftHelperScreen.tickCraftabilitySortPreload();
     }
 
     @SubscribeEvent

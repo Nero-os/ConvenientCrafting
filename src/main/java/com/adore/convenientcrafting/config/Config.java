@@ -105,6 +105,23 @@ public class Config {
             .defineListAllowEmpty("additionalRecipeTypes", List.of(), () -> "", Config::validateResourceLocation);
 
     /**
+     * Recipe types that are available before the player obtains a workstation.
+     */
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> DEFAULT_UNLOCKED_RECIPE_TYPES = BUILDER
+            .comment(
+                    "Recipe type ids that are unlocked for every player without obtaining a workstation first.",
+                    "These are not saved into player data; changing this config affects existing worlds after the next sync.",
+                    "Default: minecraft:crafting"
+            )
+            .translation("convenientcrafting.configuration.defaultUnlockedRecipeTypes")
+            .defineListAllowEmpty(
+                    "defaultUnlockedRecipeTypes",
+                    List.of(RecipeTypeAdapters.CRAFTING.toString()),
+                    () -> "",
+                    Config::validateResourceLocation
+            );
+
+    /**
      * 配方类型对应的解锁物品配置。
      *
      * <p>格式为 {@code recipe_type=item_id,item_id}。玩家获得任意一个解锁物品后，

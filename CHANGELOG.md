@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.6.0 - 2026-07-22
+## 1.6.0 - 2026-06-25
 
 ### Added
 
@@ -8,6 +8,7 @@
 - Added separate config toggles for player inventory sorting, container sorting, and Alt material compaction. This makes it easier to use Convenient Crafting alongside dedicated inventory-sorting mods.
 - Added separate config toggles for category bags. Modpack authors can now hide bag items from the creative tab, disable bag recipes, turn off automatic pickup into bags, or decide whether bag contents count as materials for Convenient Crafting.
 - Added read-only diagnostic commands for modpack authors to inspect configured recipe types, recipe unlock rules, matching result recipes, and whether a recipe should appear in the Convenient Crafting panel.
+- Added `defaultUnlockedRecipeTypes`, defaulting to `minecraft:crafting`, so selected recipe types are available immediately and can preload without requiring the player to obtain a workstation first.
 
 ### Changed
 
@@ -18,6 +19,10 @@
 
 ### Fixed
 
+- Reduced repeated hitches when opening or refreshing the convenient crafting panel in large modpacks by reusing craftability checks, limiting opening-time warmup, and rebuilding the visible recipe list in small batches.
+- Restored craftable-first recipe ordering while the convenient crafting panel rebuilds and refreshes craftability in the background.
+- Avoided restarting recipe loading and craftability sorting when using the page reset button or returning from the missing-material tree screen.
+- Added background craftability and default-sort preloading so the convenient crafting panel can open with craftable recipes already sorted first when the current inventory state has been prepared.
 - Fixed Convenient Crafting treating armor and empty offhand slots as ordinary inventory space, which could consume materials without storing the crafted result when the main inventory was full.
 - Fixed equipped armor being considered available crafting material.
 - Fixed crafting-container remainders such as buckets and bottles being consumed instead of returned to the player.

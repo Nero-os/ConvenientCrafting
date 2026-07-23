@@ -77,6 +77,9 @@ public class CraftHelperScreen extends Screen {
     private static final int BACKGROUND_RECIPE_LOAD_BATCH_SIZE = 100;
     private static final int CRAFTABILITY_REFRESH_BATCH_SIZE = 12;
     private static final int SORT_CRAFTABILITY_WARMUP_RECIPES_PER_GROUP = 3;
+    private static final int SORT_CRAFTABILITY_WARMUP_RECIPE_BUDGET = 120;
+    private static final int RECIPE_VIEW_REBUILD_INITIAL_BATCH_SIZE = 160;
+    private static final int RECIPE_VIEW_REBUILD_BATCH_SIZE = 240;
     private static final int POST_CRAFT_REFRESH_TIMEOUT_TICKS = 10;
     private static final int KEY_ENTER = 257;
     private static final int KEY_ESCAPE = 256;
@@ -90,7 +93,19 @@ public class CraftHelperScreen extends Screen {
     private static int cachedRecipeCount = -1;
     private static int cachedUnlockRevision = -1;
     private static List<RecipeGroup> cachedRecipeGroups = List.of();
+    private static Object cachedCraftabilityRecipeManager;
+    private static int cachedCraftabilityRecipeCount = -1;
+    private static int cachedCraftabilityUnlockRevision = -1;
+    private static int cachedCraftabilityInventoryFingerprint;
+    private static final Map<ResourceLocation, Boolean> cachedCraftabilityByRecipe = new HashMap<>();
+    private static Object cachedDefaultSortedRecipeManager;
+    private static int cachedDefaultSortedRecipeCount = -1;
+    private static int cachedDefaultSortedUnlockRevision = -1;
+    private static int cachedDefaultSortedInventoryFingerprint;
+    private static List<RecipeGroup> cachedDefaultSortedRecipeGroups = List.of();
+    private static int cachedDefaultSortedCraftableGroupCount;
     private static CraftHelperScreen backgroundIndexBuilder;
+    private static CraftHelperScreen backgroundCraftabilityBuilder;
 
     private int panelX;
     private int panelY;
@@ -118,6 +133,8 @@ public class CraftHelperScreen extends Screen {
     private final Set<String> pendingDuplicateRecipes = new HashSet<>();
     private final Map<String, List<RecipeEntry>> pendingGroupedRecipes = new LinkedHashMap<>();
     private final List<RecipeEntry> pendingCraftabilityRefresh = new ArrayList<>();
+    private final List<RecipeGroup> pendingViewRecipeGroups = new ArrayList<>();
+    private final Map<String, RecipeGroupSortKey> recipeGroupSortKeys = new HashMap<>();
     private boolean cachedUseBagContentsForCrafting = true;
     private final boolean backgroundIndexBuild;
     private Object loadingRecipeManager;
@@ -128,6 +145,14 @@ public class CraftHelperScreen extends Screen {
     private boolean recipesLoading;
     private boolean waitingForBackgroundIndex;
     private boolean creativeTabsBuilt;
+    private boolean recipeViewRebuildInProgress;
+    private int recipeViewRebuildCursor;
+    private int pendingViewCraftableGroupCount;
+    private SearchQuery pendingViewSearchQuery = new SearchQuery(List.of());
+    private boolean craftabilityRefreshInProgress;
+    private int craftabilityRefreshGroupCursor;
+    private boolean initialized;
+    private int craftabilityCacheInventoryFingerprint;
     private int pendingPostCraftRefreshTicks;
     private int pendingPostCraftInventoryFingerprint;
 
@@ -180,8 +205,52 @@ public class CraftHelperScreen extends Screen {
         }
     }
 
+    public static void preloadCraftabilitySort() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null || !isRecipeIndexCacheValid(mc)) {
+            return;
+        }
+
+        int inventoryFingerprint = computeInventoryFingerprint();
+        if (isDefaultSortedRecipeCacheValid(mc, inventoryFingerprint)) {
+            return;
+        }
+        if (backgroundCraftabilityBuilder != null
+                && backgroundCraftabilityBuilder.isCraftabilityPreloadFor(mc, inventoryFingerprint)) {
+            return;
+        }
+
+        backgroundCraftabilityBuilder = new CraftHelperScreen(false);
+        backgroundCraftabilityBuilder.startCraftabilitySortPreload(inventoryFingerprint);
+    }
+
+    public static void tickCraftabilitySortPreload() {
+        if (backgroundCraftabilityBuilder == null) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null || !isRecipeIndexCacheValid(mc)) {
+            backgroundCraftabilityBuilder = null;
+            return;
+        }
+
+        int inventoryFingerprint = computeInventoryFingerprint();
+        if (!backgroundCraftabilityBuilder.isCraftabilityPreloadFor(mc, inventoryFingerprint)) {
+            backgroundCraftabilityBuilder = null;
+            return;
+        }
+
+        backgroundCraftabilityBuilder.continueCraftabilityRefresh();
+        if (backgroundCraftabilityBuilder.isCraftabilityRefreshComplete()) {
+            backgroundCraftabilityBuilder.storeDefaultSortedRecipeCache(mc);
+            backgroundCraftabilityBuilder = null;
+        }
+    }
+
     public static void stopBackgroundRecipeWork() {
         backgroundIndexBuilder = null;
+        backgroundCraftabilityBuilder = null;
     }
 
     public static void clearRecipeIndexCache() {
@@ -190,6 +259,25 @@ public class CraftHelperScreen extends Screen {
         cachedRecipeCount = -1;
         cachedUnlockRevision = -1;
         cachedRecipeGroups = List.of();
+        clearCraftabilityCache();
+    }
+
+    private static void clearCraftabilityCache() {
+        cachedCraftabilityRecipeManager = null;
+        cachedCraftabilityRecipeCount = -1;
+        cachedCraftabilityUnlockRevision = -1;
+        cachedCraftabilityInventoryFingerprint = 0;
+        cachedCraftabilityByRecipe.clear();
+        clearDefaultSortedRecipeCache();
+    }
+
+    private static void clearDefaultSortedRecipeCache() {
+        cachedDefaultSortedRecipeManager = null;
+        cachedDefaultSortedRecipeCount = -1;
+        cachedDefaultSortedUnlockRevision = -1;
+        cachedDefaultSortedInventoryFingerprint = 0;
+        cachedDefaultSortedRecipeGroups = List.of();
+        cachedDefaultSortedCraftableGroupCount = 0;
     }
 
     /**
@@ -199,6 +287,15 @@ public class CraftHelperScreen extends Screen {
     protected void init() {
         updateLayout();
 
+        if (initialized) {
+            clampCurrentPage();
+            materializeCurrentPage();
+            refreshCurrentPageCraftability();
+            refreshButtons();
+            return;
+        }
+
+        initialized = true;
         refreshInventoryCache();
         startRecipeLoading();
         refreshButtons();
@@ -266,6 +363,14 @@ public class CraftHelperScreen extends Screen {
         pendingDuplicateRecipes.clear();
         pendingGroupedRecipes.clear();
         pendingCraftabilityRefresh.clear();
+        craftabilityRefreshInProgress = false;
+        craftabilityRefreshGroupCursor = 0;
+        pendingViewRecipeGroups.clear();
+        recipeGroupSortKeys.clear();
+        recipeViewRebuildInProgress = false;
+        recipeViewRebuildCursor = 0;
+        pendingViewCraftableGroupCount = 0;
+        restoreCraftabilityCacheForCurrentInventory();
         loadedRecipeCount = 0;
         totalRecipeLoadCount = 0;
         recipesLoading = false;
@@ -297,9 +402,14 @@ public class CraftHelperScreen extends Screen {
             return false;
         }
 
-        allRecipeGroups = new ArrayList<>(cachedRecipeGroups);
+        allRecipeGroups = cachedRecipeGroups;
         recipesLoading = false;
         loadedRecipeCount = totalRecipeLoadCount = cachedRecipeCount;
+        if (tryUseCachedDefaultSortedRecipeView(mc)) {
+            refreshButtons();
+            return true;
+        }
+
         initializeRecipeViewQuickly();
         startCraftabilityRefresh();
         refreshButtons();
@@ -311,6 +421,139 @@ public class CraftHelperScreen extends Screen {
         return cachedRecipeManager == recipeManager
                 && cachedRecipeCount == recipeManager.getRecipes().size()
                 && cachedUnlockRevision == ClientRecipeUnlocks.getRevision();
+    }
+
+    private static boolean isDefaultSortedRecipeCacheValid(Minecraft mc, int inventoryFingerprint) {
+        var recipeManager = mc.level.getRecipeManager();
+        return cachedDefaultSortedRecipeManager == recipeManager
+                && cachedDefaultSortedRecipeCount == recipeManager.getRecipes().size()
+                && cachedDefaultSortedUnlockRevision == ClientRecipeUnlocks.getRevision()
+                && cachedDefaultSortedInventoryFingerprint == inventoryFingerprint;
+    }
+
+    private boolean tryUseCachedDefaultSortedRecipeView(Minecraft mc) {
+        if (!searchText.isEmpty() || onlyCraftable) {
+            return false;
+        }
+
+        int inventoryFingerprint = computeInventoryFingerprint();
+        if (!isDefaultSortedRecipeCacheValid(mc, inventoryFingerprint)) {
+            return false;
+        }
+
+        restoreCraftabilityCacheForCurrentInventory();
+        viewRecipeGroups = cachedDefaultSortedRecipeGroups;
+        filteredRecipeCount = viewRecipeGroups.size();
+        filteredCraftableGroupCount = cachedDefaultSortedCraftableGroupCount;
+        recipeViewRebuildInProgress = false;
+        craftabilityRefreshInProgress = false;
+        pendingCraftabilityRefresh.clear();
+        pendingViewRecipeGroups.clear();
+        clampCurrentPage();
+        materializeCurrentPage();
+        refreshCurrentPageCraftability();
+        return true;
+    }
+
+    private void startCraftabilitySortPreload(int inventoryFingerprint) {
+        allRecipeGroups = cachedRecipeGroups;
+        viewRecipeGroups = cachedRecipeGroups;
+        sortedRecipeGroups = List.of();
+        pendingCraftabilityRefresh.clear();
+        recipeGroupSortKeys.clear();
+        refreshInventoryCache();
+        restoreCraftabilityCacheForCurrentInventory();
+        craftabilityCacheInventoryFingerprint = inventoryFingerprint;
+        startCraftabilityRefresh();
+    }
+
+    private boolean isCraftabilityPreloadFor(Minecraft mc, int inventoryFingerprint) {
+        return !recipesLoading
+                && cachedRecipeManager == mc.level.getRecipeManager()
+                && cachedRecipeCount == mc.level.getRecipeManager().getRecipes().size()
+                && cachedUnlockRevision == ClientRecipeUnlocks.getRevision()
+                && craftabilityCacheInventoryFingerprint == inventoryFingerprint;
+    }
+
+    private boolean isCraftabilityRefreshComplete() {
+        return !craftabilityRefreshInProgress && pendingCraftabilityRefresh.isEmpty();
+    }
+
+    private void storeDefaultSortedRecipeCache(Minecraft mc) {
+        List<RecipeGroup> sortedGroups = new ArrayList<>(cachedRecipeGroups);
+        sortedGroups.sort(this::compareRecipeGroups);
+
+        var recipeManager = mc.level.getRecipeManager();
+        cachedDefaultSortedRecipeManager = recipeManager;
+        cachedDefaultSortedRecipeCount = recipeManager.getRecipes().size();
+        cachedDefaultSortedUnlockRevision = ClientRecipeUnlocks.getRevision();
+        cachedDefaultSortedInventoryFingerprint = craftabilityCacheInventoryFingerprint;
+        cachedDefaultSortedRecipeGroups = List.copyOf(sortedGroups);
+        cachedDefaultSortedCraftableGroupCount = 0;
+        for (RecipeGroup group : sortedGroups) {
+            if (canCraftAnyRecipe(group, cachedCraftableRecipes)) {
+                cachedDefaultSortedCraftableGroupCount++;
+            }
+        }
+    }
+
+    private void restoreCraftabilityCacheForCurrentInventory() {
+        if (backgroundIndexBuild) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) {
+            cachedCraftableRecipes.clear();
+            return;
+        }
+
+        cachedCraftableRecipes.clear();
+        int inventoryFingerprint = computeInventoryFingerprint();
+        craftabilityCacheInventoryFingerprint = inventoryFingerprint;
+        var recipeManager = mc.level.getRecipeManager();
+        int recipeCount = recipeManager.getRecipes().size();
+        int unlockRevision = ClientRecipeUnlocks.getRevision();
+        boolean cacheValid = cachedCraftabilityRecipeManager == recipeManager
+                && cachedCraftabilityRecipeCount == recipeCount
+                && cachedCraftabilityUnlockRevision == unlockRevision
+                && cachedCraftabilityInventoryFingerprint == inventoryFingerprint;
+
+        if (!cacheValid) {
+            cachedCraftabilityRecipeManager = recipeManager;
+            cachedCraftabilityRecipeCount = recipeCount;
+            cachedCraftabilityUnlockRevision = unlockRevision;
+            cachedCraftabilityInventoryFingerprint = inventoryFingerprint;
+            cachedCraftabilityByRecipe.clear();
+            clearDefaultSortedRecipeCache();
+            return;
+        }
+
+        cachedCraftableRecipes.putAll(cachedCraftabilityByRecipe);
+    }
+
+    private void cacheCraftableState(ResourceLocation recipeId, boolean craftable) {
+        cachedCraftableRecipes.put(recipeId, craftable);
+
+        if (backgroundIndexBuild) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) {
+            return;
+        }
+
+        var recipeManager = mc.level.getRecipeManager();
+        if (cachedCraftabilityRecipeManager == recipeManager
+                && cachedCraftabilityRecipeCount == recipeManager.getRecipes().size()
+                && cachedCraftabilityUnlockRevision == ClientRecipeUnlocks.getRevision()
+                && cachedCraftabilityInventoryFingerprint == craftabilityCacheInventoryFingerprint) {
+            Boolean previous = cachedCraftabilityByRecipe.put(recipeId, craftable);
+            if (previous != null && previous != craftable) {
+                clearDefaultSortedRecipeCache();
+            }
+        }
     }
 
     @Override
@@ -337,6 +580,7 @@ public class CraftHelperScreen extends Screen {
             }
         }
         continueRecipeLoading();
+        continueRecipeViewRebuild(RECIPE_VIEW_REBUILD_BATCH_SIZE);
         continueCraftabilityRefresh();
         refreshAfterServerInventorySync();
     }
@@ -361,6 +605,7 @@ public class CraftHelperScreen extends Screen {
         pendingPostCraftInventoryFingerprint = 0;
         refreshInventoryCache();
         cachedCraftableRecipes.clear();
+        restoreCraftabilityCacheForCurrentInventory();
         sortRecipes();
         refreshButtons();
     }
@@ -578,38 +823,64 @@ public class CraftHelperScreen extends Screen {
             startCraftabilityRefresh();
         }
 
-        rebuildRecipeView();
-        clampCurrentPage();
-        materializeCurrentPage();
-        refreshCurrentPageCraftability();
+        startRecipeViewRebuild();
+        continueRecipeViewRebuild(RECIPE_VIEW_REBUILD_INITIAL_BATCH_SIZE);
     }
 
     private void initializeRecipeViewQuickly() {
-        rebuildRecipeView();
+        startRecipeViewRebuild();
+        continueRecipeViewRebuild(RECIPE_VIEW_REBUILD_INITIAL_BATCH_SIZE);
+    }
+
+    private void startRecipeViewRebuild() {
+        warmUpCraftabilityForSorting();
+
+        pendingViewRecipeGroups.clear();
+        pendingViewCraftableGroupCount = 0;
+        recipeViewRebuildCursor = 0;
+        pendingViewSearchQuery = parseSearchQuery(searchText.trim().toLowerCase(Locale.ROOT));
+        recipeViewRebuildInProgress = true;
+
+        viewRecipeGroups = new ArrayList<>();
+        sortedRecipeGroups = List.of();
+        filteredRecipeCount = 0;
+        filteredCraftableGroupCount = 0;
+    }
+
+    private void continueRecipeViewRebuild(int maxGroups) {
+        if (!recipeViewRebuildInProgress || recipesLoading || waitingForBackgroundIndex) {
+            return;
+        }
+
+        int processed = 0;
+        while (processed < maxGroups && recipeViewRebuildCursor < allRecipeGroups.size()) {
+            RecipeGroup group = allRecipeGroups.get(recipeViewRebuildCursor++);
+            if (matchesFilters(group, cachedCraftableRecipes, pendingViewSearchQuery)) {
+                pendingViewRecipeGroups.add(group);
+                if (canCraftAnyRecipe(group, cachedCraftableRecipes)) {
+                    pendingViewCraftableGroupCount++;
+                }
+            }
+            processed++;
+        }
+
+        viewRecipeGroups = pendingViewRecipeGroups;
+        filteredRecipeCount = recipeViewRebuildCursor >= allRecipeGroups.size()
+                ? pendingViewRecipeGroups.size()
+                : Math.max(pendingViewRecipeGroups.size(), allRecipeGroups.size());
+        filteredCraftableGroupCount = pendingViewCraftableGroupCount;
+
+        if (recipeViewRebuildCursor >= allRecipeGroups.size()) {
+            recipeViewRebuildInProgress = false;
+            viewRecipeGroups.sort(this::compareRecipeGroups);
+            filteredRecipeCount = viewRecipeGroups.size();
+            filteredCraftableGroupCount = pendingViewCraftableGroupCount;
+        }
+
         clampCurrentPage();
         materializeCurrentPage();
         refreshCurrentPageCraftability();
-    }
-
-    private void rebuildRecipeView() {
-        warmUpCraftabilityForSorting();
-
-        List<RecipeGroup> nextView = new ArrayList<>();
-        int nextCraftableCount = 0;
-        SearchQuery searchQuery = parseSearchQuery(searchText.trim().toLowerCase(Locale.ROOT));
-        for (RecipeGroup group : allRecipeGroups) {
-            if (matchesFilters(group, cachedCraftableRecipes, searchQuery)) {
-                nextView.add(group);
-                if (canCraftAnyRecipe(group, cachedCraftableRecipes)) {
-                    nextCraftableCount++;
-                }
-            }
-        }
-
-        nextView.sort(this::compareRecipeGroups);
-        viewRecipeGroups = nextView;
-        filteredRecipeCount = viewRecipeGroups.size();
-        filteredCraftableGroupCount = nextCraftableCount;
+        materializeCurrentPage();
     }
 
     private void warmUpCraftabilityForSorting() {
@@ -617,15 +888,22 @@ public class CraftHelperScreen extends Screen {
             return;
         }
 
+        int remainingRecipeBudget = SORT_CRAFTABILITY_WARMUP_RECIPE_BUDGET;
         for (RecipeGroup group : allRecipeGroups) {
+            if (remainingRecipeBudget <= 0) {
+                return;
+            }
             int checked = 0;
             for (RecipeEntry entry : group.recipes()) {
                 if (cachedCraftableRecipes.containsKey(entry.id())) {
                     if (Boolean.TRUE.equals(cachedCraftableRecipes.get(entry.id()))) {
                         break;
                     }
+                } else if (remainingRecipeBudget > 0) {
+                    cacheCraftableState(entry.id(), canCraftEntry(entry));
+                    remainingRecipeBudget--;
                 } else {
-                    cachedCraftableRecipes.put(entry.id(), canCraftEntry(entry));
+                    break;
                 }
 
                 checked++;
@@ -636,7 +914,7 @@ public class CraftHelperScreen extends Screen {
         }
     }
 
-    private int computeInventoryFingerprint() {
+    private static int computeInventoryFingerprint() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) {
             return 0;
@@ -659,7 +937,7 @@ public class CraftHelperScreen extends Screen {
         return fingerprint;
     }
 
-    private int stackFingerprint(int slotIndex, ItemStack stack) {
+    private static int stackFingerprint(int slotIndex, ItemStack stack) {
         if (stack.isEmpty()) {
             return slotIndex;
         }
@@ -699,15 +977,37 @@ public class CraftHelperScreen extends Screen {
             return;
         }
 
-        sortedRecipeGroups = new ArrayList<>(viewRecipeGroups.subList(pageStart, Math.min(pageEnd, viewRecipeGroups.size())));
+        List<RecipeGroup> pageGroups = new ArrayList<>(recipesPerPage);
+        int seen = 0;
+        seen = collectPageGroupsByCraftability(pageGroups, seen, pageStart, pageEnd, true);
+        collectPageGroupsByCraftability(pageGroups, seen, pageStart, pageEnd, false);
+        sortedRecipeGroups = pageGroups;
+    }
+
+    private int collectPageGroupsByCraftability(List<RecipeGroup> pageGroups, int seen, int pageStart, int pageEnd, boolean craftable) {
+        if (pageGroups.size() >= recipesPerPage) {
+            return seen;
+        }
+
+        for (RecipeGroup group : viewRecipeGroups) {
+            if (canCraftAnyRecipe(group, cachedCraftableRecipes) != craftable) {
+                continue;
+            }
+
+            if (seen >= pageStart && seen < pageEnd) {
+                pageGroups.add(group);
+                if (pageGroups.size() >= recipesPerPage) {
+                    return seen + 1;
+                }
+            }
+            seen++;
+        }
+        return seen;
     }
 
     private int compareRecipeGroups(RecipeGroup a, RecipeGroup b) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return 0;
-
-        ItemStack resultA = getEntryResult(getFirstRecipe(a));
-        ItemStack resultB = getEntryResult(getFirstRecipe(b));
 
         boolean canCraftA = canCraftAnyRecipe(a, cachedCraftableRecipes);
         boolean canCraftB = canCraftAnyRecipe(b, cachedCraftableRecipes);
@@ -715,38 +1015,65 @@ public class CraftHelperScreen extends Screen {
             return canCraftA ? -1 : 1;
         }
 
-        int countA = cachedInventoryCounts.getOrDefault(buildItemKey(resultA), 0);
-        int countB = cachedInventoryCounts.getOrDefault(buildItemKey(resultB), 0);
+        RecipeGroupSortKey keyA = getRecipeGroupSortKey(a);
+        RecipeGroupSortKey keyB = getRecipeGroupSortKey(b);
+        int countA = cachedInventoryCounts.getOrDefault(keyA.itemKey(), 0);
+        int countB = cachedInventoryCounts.getOrDefault(keyB.itemKey(), 0);
         if (countA != countB) {
             return Integer.compare(countB, countA);
         }
 
-        String nameA = resultA.getHoverName().getString();
-        String nameB = resultB.getHoverName().getString();
-        return nameA.compareToIgnoreCase(nameB);
+        return keyA.displayName().compareToIgnoreCase(keyB.displayName());
+    }
+
+    private RecipeGroupSortKey getRecipeGroupSortKey(RecipeGroup group) {
+        return recipeGroupSortKeys.computeIfAbsent(group.resultKey(), ignored -> {
+            ItemStack result = getEntryResult(getFirstRecipe(group));
+            return new RecipeGroupSortKey(buildItemKey(result), result.getHoverName().getString());
+        });
     }
 
     private void startCraftabilityRefresh() {
         pendingCraftabilityRefresh.clear();
-        for (RecipeGroup group : allRecipeGroups) {
-            pendingCraftabilityRefresh.addAll(group.recipes());
-        }
+        craftabilityRefreshGroupCursor = 0;
+        craftabilityRefreshInProgress = !allRecipeGroups.isEmpty();
     }
 
     private void continueCraftabilityRefresh() {
-        if (pendingCraftabilityRefresh.isEmpty() || recipesLoading) {
+        if ((!craftabilityRefreshInProgress && pendingCraftabilityRefresh.isEmpty()) || recipesLoading) {
             return;
         }
 
         int processed = 0;
-        while (processed < CRAFTABILITY_REFRESH_BATCH_SIZE && !pendingCraftabilityRefresh.isEmpty()) {
+        boolean craftableStateChanged = false;
+        while (processed < CRAFTABILITY_REFRESH_BATCH_SIZE) {
+            while (pendingCraftabilityRefresh.isEmpty() && craftabilityRefreshGroupCursor < allRecipeGroups.size()) {
+                pendingCraftabilityRefresh.addAll(allRecipeGroups.get(craftabilityRefreshGroupCursor++).recipes());
+            }
+            if (pendingCraftabilityRefresh.isEmpty()) {
+                break;
+            }
+
             RecipeEntry entry = pendingCraftabilityRefresh.remove(pendingCraftabilityRefresh.size() - 1);
-            cachedCraftableRecipes.put(entry.id(), canCraftEntry(entry));
+            boolean previousCraftable = cachedCraftableRecipes.getOrDefault(entry.id(), false);
+            boolean craftable = canCraftEntry(entry);
+            cacheCraftableState(entry.id(), craftable);
+            if (previousCraftable != craftable) {
+                craftableStateChanged = true;
+            }
             processed++;
         }
 
-        if (pendingCraftabilityRefresh.isEmpty()) {
+        if (craftableStateChanged) {
             filteredCraftableGroupCount = countCraftableGroupsInView();
+            materializeCurrentPage();
+            refreshButtons();
+        }
+
+        if (pendingCraftabilityRefresh.isEmpty() && craftabilityRefreshGroupCursor >= allRecipeGroups.size()) {
+            craftabilityRefreshInProgress = false;
+            filteredCraftableGroupCount = countCraftableGroupsInView();
+            materializeCurrentPage();
             refreshButtons();
         }
     }
@@ -758,7 +1085,7 @@ public class CraftHelperScreen extends Screen {
 
         for (RecipeGroup group : sortedRecipeGroups) {
             for (RecipeEntry entry : group.recipes()) {
-                cachedCraftableRecipes.put(entry.id(), canCraftEntry(entry));
+                cacheCraftableState(entry.id(), canCraftEntry(entry));
             }
         }
     }
@@ -1611,6 +1938,9 @@ public class CraftHelperScreen extends Screen {
     private record RecipeGroup(String resultKey, List<RecipeEntry> recipes) {
     }
 
+    private record RecipeGroupSortKey(String itemKey, String displayName) {
+    }
+
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(guiGraphics, mouseX, mouseY, partialTick);
@@ -1856,8 +2186,6 @@ public class CraftHelperScreen extends Screen {
 
     /**
      * 绘制分页、刷新和关闭按钮。
-     *
-     * @param guiGraphics 图形绘制上下文
      */
     private String getVisibleSearchText(int textWidth) {
         ensureSearchCursorVisible(Math.max(1, textWidth));
@@ -2073,7 +2401,10 @@ public class CraftHelperScreen extends Screen {
         if (isInside(mouseX, mouseY, panelX + panelWidth / 2 - 12, panelY + panelHeight - 30, 24, 18)) {
             currentPage = 0;
             refreshInventoryCache();
-            startRecipeLoading();
+            restoreCraftabilityCacheForCurrentInventory();
+            materializeCurrentPage();
+            refreshCurrentPageCraftability();
+            materializeCurrentPage();
             searchHistory.clear();
             refreshButtons();
             return true;
