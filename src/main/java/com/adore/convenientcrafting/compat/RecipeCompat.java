@@ -1,6 +1,10 @@
 package com.adore.convenientcrafting.compat;
 
 import java.util.List;
+import java.util.ArrayList;
+import net.minecraft.world.item.crafting.CraftingInput;
+import net.minecraft.world.item.crafting.CraftingRecipe;
+import net.minecraft.world.item.crafting.ShapedRecipe;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -54,6 +58,30 @@ public final class RecipeCompat {
         *///?} else {
         return recipe.getResultItem(registries);
         //?}
+    }
+
+    /** Reconstruct the pattern, including holes, from matched nonempty ingredients. */
+    public static CraftingInput craftingInput(CraftingRecipe recipe, List<ItemStack> matched) {
+        List<ItemStack> slots = new ArrayList<>();
+        if (recipe instanceof ShapedRecipe shaped) {
+            int next = 0;
+            //? if >=1.21.2 {
+            /*for (Optional<Ingredient> ingredient : shaped.getIngredients()) {
+                slots.add(ingredient.isPresent() ? matched.get(next++).copy() : ItemStack.EMPTY);
+            }
+            *///?} else {
+            for (Ingredient ingredient : shaped.getIngredients()) {
+                slots.add(ingredient.isEmpty() ? ItemStack.EMPTY : matched.get(next++).copy());
+            }
+            //?}
+            return CraftingInput.of(shaped.getWidth(), shaped.getHeight(), slots);
+        }
+        if (matched.isEmpty() || matched.size() > 9) return CraftingInput.of(0, 0, List.of());
+        int width = Math.min(3, matched.size());
+        int height = (matched.size() + width - 1) / width;
+        for (ItemStack stack : matched) slots.add(stack.copy());
+        while (slots.size() < width * height) slots.add(ItemStack.EMPTY);
+        return CraftingInput.of(width, height, slots);
     }
 
     public static ResourceLocation id(RecipeHolder<?> holder) {

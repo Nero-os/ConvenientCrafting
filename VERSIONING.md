@@ -1,38 +1,38 @@
-# Multi-version development
+# 多版本开发
 
-Convenient Crafting uses Stonecutter 0.9.8 to build Minecraft 1.21.1, 1.21.2, and 1.21.4 from one source tree. All targets require Java 21.
+Convenient Crafting 使用 Stonecutter 0.9.8，通过同一套源码构建 Minecraft 1.21.1、1.21.2 和 1.21.4。所有目标版本均需要 Java 21。
 
-| Minecraft | NeoForge build dependency | Runtime range | Parchment |
+| Minecraft | NeoForge 构建依赖 | NeoForge 运行时版本范围 | Parchment 映射 |
 | --- | --- | --- | --- |
 | 1.21.1 | 21.1.220 | [21.1.0,21.2.0) | 1.21.1 / 2024.11.17 |
 | 1.21.2 | 21.2.1-beta | [21.2.1-beta,21.3.0) | 1.21.3 / 2024.12.07 |
 | 1.21.4 | 21.4.161 | [21.4.161,21.5.0) | 1.21.4 / 2025.03.23 |
 
-Each jar declares its exact Minecraft target. Do not broaden the range without testing every included version.
+每个 JAR 只声明支持对应的 Minecraft 版本。未经逐一测试，不要扩大其兼容版本范围。
 
-## Layout
+## 目录结构
 
-- `settings.gradle`: supported versions and the VCS baseline (1.21.1).
-- `stonecutter.gradle`: active IDE version and the `buildAll` task.
-- `build.gradle`: shared ModDevGradle configuration.
-- `gradle.properties`: shared mod identity and release version.
-- `versions/<minecraft>/gradle.properties`: Minecraft, NeoForge, loader, and mappings dependencies.
-- `src/main`: shared Java, templates, and resources.
-- `versions/<minecraft>/src/main`: version-specific resource overrides, merged by Stonecutter.
-- `compat/RecipeCompat.java`: recipe API adaptations using Stonecutter version conditions.
-- `client/ClientRecipes.java`: client recipe snapshot with cache invalidation on synchronization.
+- `settings.gradle`：支持的版本列表及版本控制中的源码基准版本（1.21.1）。
+- `stonecutter.gradle`：IDE 当前激活的版本及 `buildAll` 任务。
+- `build.gradle`：共享的 ModDevGradle 配置。
+- `gradle.properties`：共享的模组标识及发布版本号。
+- `versions/<minecraft>/gradle.properties`：各版本的 Minecraft、NeoForge、加载器及映射依赖。
+- `src/main`：共享的 Java 源码、模板和资源。
+- `versions/<minecraft>/src/main`：各版本的专用资源，由 Stonecutter 合并并覆盖共享资源。
+- `compat/RecipeCompat.java`：通过 Stonecutter 版本条件适配配方 API 差异。
+- `client/ClientRecipes.java`：客户端配方快照，并在同步时使相关缓存失效。
 
-Edit shared sources under `src/`, not the generated files under `versions/*/build/generated/stonecutter/`.
+请修改 `src/` 下的共享源码，不要直接修改 `versions/*/build/generated/stonecutter/` 下的生成文件。
 
-## Build and run
+## 构建与运行
 
-Windows commands (use `./gradlew` on Linux/macOS):
+以下为 Windows 命令；Linux/macOS 请使用 `./gradlew`：
 
 ```powershell
-# Compile, check, and collect all three release jars in build/libs/.
+# 编译、检查三个目标版本，并将发布 JAR 汇总到 build/libs/。
 .\gradlew.bat buildAll
 
-# Build or run one target explicitly; these do not switch the shared source tree.
+# 单独构建或运行指定版本；这些命令不会切换共享源码的激活版本。
 .\gradlew.bat :1.21.1:build
 .\gradlew.bat :1.21.2:build
 .\gradlew.bat :1.21.4:build
@@ -41,48 +41,58 @@ Windows commands (use `./gradlew` on Linux/macOS):
 .\gradlew.bat :1.21.4:runClient
 .\gradlew.bat :1.21.4:runServer
 
-# Change the IDE's active source version. Stonecutter rewrites its version comments.
+# 切换 IDE 中的源码激活版本；Stonecutter 会改写源码中的版本条件注释。
 .\gradlew.bat "Set active project to 1.21.4"
 
-# Restore the 1.21.1 source baseline before committing.
+# 提交前恢复到 1.21.1 源码基准版本。
 .\gradlew.bat "Reset active project"
 ```
 
-Run directories are isolated under `versions/<minecraft>/run/`. Do not copy worlds between versions just to test the mod. Minecraft artifact generation is serialized to avoid decompiling two versions concurrently.
+各版本的运行目录独立存放在 `versions/<minecraft>/run/`。不要为了测试模组而在不同版本之间复制存档。Minecraft 构建产物的生成会按顺序执行，避免同时反编译多个版本。
 
-Release jars are named `convenientcrafting-<mod_version>-neoforge-mc<minecraft_version>.jar`. Keep the target jars in the same release when appropriate, and tag each download only with its own Minecraft version. Updating the mod version does not require duplicating shared code or creating a branch per Minecraft version.
+发布 JAR 的命名格式为 `convenientcrafting-<mod_version>-neoforge-mc<minecraft_version>.jar`。可以将各目标版本的 JAR 放在同一次发布中，但每个下载文件只应标注其对应的 Minecraft 版本。更新模组版本号时，无需复制共享源码，也无需为每个 Minecraft 版本单独创建 Git 分支。
 
-## Version adaptations
+## 版本适配说明
 
-- From 1.21.2, recipe identifiers use resource keys; ingredients and result previews use the new placement/display APIs.
-- On 1.21.4, NeoForge's `OnDatapackSyncEvent.sendRecipes` synchronizes built-in and configured recipe types on login and datapack reload. `RecipesReceivedEvent` replaces the client snapshot and invalidates recipe indexes, including same-size reloads.
-- On 1.21.2, a target-local `recipe_catalog` payload sends the encoded catalogue in byte chunks of at most 64 KiB. Recipes are decoded only after vanilla tag sync, so newly introduced item tags exist before ingredient decoding. The client publishes a complete catalogue at once, invalidating same-size reloads and clearing unfinished data on logout. The old branch's 32,768-recipe catalogue limit is removed.
-- The 1.21.2 target retains NeoForge 21.2.1-beta and the original port's Parchment 1.21.3 / 2024.12.07 parameter mappings. Its old single-target build and unlock-packet wire format are superseded by the shared build and separate catalogue payload; `codex/mc-1.21.2` remains a historical reference.
-- Craft execution stays on the server and resolves the original server recipe by id; client data never supplies an authoritative result.
-- Configured custom simple recipe types on 1.21.2 and later must expose usable placement ingredients and result displays through the new recipe APIs.
-- Classification bags set their item registry keys before construction.
-- Version-specific recipe JSON uses the modern ingredient format on 1.21.2 and later.
-- On 1.21.4, version-specific item definitions select empty/filled bag models using the container component. The 1.21.1 and 1.21.2 targets retain legacy item predicates.
-- Data generation uses `clientData` for 1.21.4 and `data` for 1.21.1/1.21.2.
+- 从 1.21.2 开始，配方标识使用资源键；材料和产物预览使用新的配方摆放与显示 API。
+- 在 1.21.4 中，通过 NeoForge 的 `OnDatapackSyncEvent.sendRecipes` 在登录及数据包重载时同步内置和配置启用的配方类型。`RecipesReceivedEvent` 会替换客户端配方快照并使配方索引失效，即使重载前后的配方数量相同也会更新。
+- 在 1.21.2 中，使用该版本专用的 `recipe_catalog` 网络消息，将编码后的配方目录拆成不超过 64 KiB 的字节块传输。配方会在原版标签同步完成后才解码，确保新增物品标签已可用。客户端会在接收完整后一次性应用配方目录；配方数量相同的重载也会刷新，退出服务器时会清理未完成的数据。旧分支中最多 32,768 条配方的限制已移除。
+- 1.21.2 保留 NeoForge 21.2.1-beta，以及原移植使用的 Parchment 1.21.3 / 2024.12.07 参数映射。原来的单版本构建和解锁消息格式已由共享构建及独立配方目录消息取代；旧分支 `codex/mc-1.21.2` 的移植内容已整合到共享工程。
+- 实际合成始终在服务端执行，并通过配方 ID 查找服务端的原始配方；客户端提供的数据不能决定最终产物。
+- 在 1.21.2 及以上版本中，配置启用的自定义简单配方类型必须通过新配方 API 提供可用的摆放材料和产物显示信息。
+- 分类袋在构造前设置物品注册键。
+- 1.21.2 及以上版本的专用配方 JSON 使用新版材料格式。
+- 在 1.21.4 中，使用该版本专用的物品定义，根据容器组件选择空袋或装有物品的袋子模型。1.21.1 和 1.21.2 仍使用旧版物品模型谓词。
+- 数据生成在 1.21.4 使用 `clientData`，在 1.21.1 和 1.21.2 使用 `data`。
 
-## Adding another target
+## 添加新的目标版本
 
-1. Add the version in `settings.gradle` and to `buildAll`/the CI matrix.
-2. Add its dependency properties under `versions/<minecraft>/`.
-3. Add localized Stonecutter conditions or version-specific overrides for changed APIs/resources.
-4. Build every existing target to catch regressions.
-5. Check a client and a dedicated server before publishing:
-   - Login, disconnect/reconnect to another server, and `/reload` (including changed recipes with the same count).
-   - Recipe search, craftability ordering, workstation unlocks, direct/batch/nested crafting, and missing-material trees.
-   - Ingredient consumption, container remainders, full inventories, and armor/offhand handling.
-   - Inventory/container sorting and Alt mineral compaction.
-   - Bag recipes, item names, empty/filled models, pickup/storage, and optional bag configuration.
-   - Configured additional recipe types and representative modpack recipes.
+1. 在 `settings.gradle` 中添加版本，并加入 `buildAll` 任务及 CI 构建矩阵。
+2. 在 `versions/<minecraft>/` 下添加该版本的依赖配置。
+3. 针对变化的 API 或资源，在相关位置添加 Stonecutter 版本条件或版本专用文件。
+4. 构建所有已有目标版本，检查是否引入回归问题。
+5. 发布前分别在客户端和独立服务端检查：
+   - 登录、断开后连接其他服务器，以及执行 `/reload`，包括配方内容变化但总数不变的情况。
+   - 配方搜索、可合成优先排序、工作站解锁、普通合成、批量合成、嵌套合成及缺失材料树。
+   - 材料扣除、桶和瓶等剩余物的返还、满背包情况，以及盔甲栏和副手栏的处理。
+   - 玩家背包整理、容器整理及 Alt 矿物压缩。
+   - 分类袋配方、物品名称、空袋与装有物品时的模型、拾取与存储，以及分类袋相关配置。
+   - 配置启用的额外配方类型，以及具有代表性的整合包配方。
 
-Successful compilation alone does not establish compatibility with every modpack or replace these gameplay checks.
+仅编译成功不能证明兼容所有整合包，也不能代替上述游戏内检查。
 
-## Automated checks
+## 自动化检查
 
-`build` and `buildAll` run NeoForge JUnit tests against real loaded server datapacks for all three targets. These check repeated shaped ingredients, shapeless output counts and tags, bag registration and conditional recipes, crafting remainders, and bag nesting/storage. The 1.21.4 target additionally checks that full workstation recipes are requested for client synchronization. Run a single target with `.\gradlew.bat :1.21.4:test`.
+各目标版本的 `build` 任务会运行对应的 NeoForge JUnit 测试，`buildAll` 则会运行三个版本的测试。测试使用实际加载的服务端数据包，检查有序配方中重复材料的数量、无序配方的产物数量和标签材料、分类袋注册与条件配方、合成剩余物，以及分类袋嵌套限制和存储行为。1.21.4 还会检查是否请求同步完整的工作站配方。单独运行某个版本的测试可使用 `.\gradlew.bat :1.21.4:test`。
 
-The 1.21.2 target also tests full-recipe codec round-tripping without premature registry/tag access, component-sensitive custom ingredients, catalogues over 32,768 entries, publication after tag updates, same-size/empty reloads, and incomplete/disconnected transfers. Shared tests exercise stonecutting outputs and smithing input matching/assembly on every target.
+1.21.2 还会测试完整配方的编码与解码，确保不会提前访问注册表或标签；同时覆盖依赖物品组件的自定义材料、超过 32,768 条配方的目录、标签更新后应用配方目录、数量相同或为空的配方重载，以及传输未完成或连接断开的情况。所有目标版本的共享测试都会检查切石产物，以及锻造材料匹配和产物生成。
+
+共享的 `CraftingRegressionTest` 覆盖 Alt 整理时背包和袋内物品的数量守恒（包括满背包及空间不足时的回退）、材料扣除的原子性、容器写入失败后的回滚、袋子与材料来源冲突、配方 `matches` 校验、动态 `assemble` 产物、自定义剩余物、有序配方中的空位、材料选项重叠时的匹配及堆叠数量限制、产物空间不足时拒绝合成，以及配方类型启用状态与解锁状态的独立检查。每个目标版本还会使用 300 组固定随机种子生成的用例，将材料匹配结果与穷举结果对照。测试同时覆盖普通合成和嵌套合成的规划过程。这些测试使用 NeoForge 数据包测试服务端及隔离的背包测试对象，不会启动客户端，也不能替代上述游戏内检查。
+
+```powershell
+# 仅运行 1.21.1 基准版本的回归测试。
+.\gradlew.bat :1.21.1:test --tests '*CraftingRegressionTest'
+
+# 构建所有支持的版本，并运行全部测试。
+.\gradlew.bat buildAll
+```

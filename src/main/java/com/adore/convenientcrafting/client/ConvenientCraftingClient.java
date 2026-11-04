@@ -6,6 +6,7 @@ import com.adore.convenientcrafting.config.Config;
 import com.adore.convenientcrafting.item.CategorizedBagItem;
 import com.adore.convenientcrafting.network.SortInventoryPacket;
 import com.adore.convenientcrafting.registry.ModItems;
+import com.adore.convenientcrafting.recipe.unlock.ClientRecipeUnlocks;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -147,6 +148,7 @@ public class ConvenientCraftingClient {
     @SubscribeEvent
     static void onClientLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         ClientRecipes.clear();
+        ClientRecipeUnlocks.clear();
         CraftHelperScreen.clearRecipeIndexCache();
     }
 

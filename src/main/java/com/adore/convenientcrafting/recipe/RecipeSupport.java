@@ -61,15 +61,9 @@ public final class RecipeSupport {
      */
     public static boolean isAdditionalRecipeTypeEnabled(Recipe<?> recipe) {
         ResourceLocation typeId = getRecipeTypeId(recipe);
-        if (typeId == null) {
-            return false;
-        }
-
-        String normalizedTypeId = typeId.toString().toLowerCase(Locale.ROOT);
-        return ClientRecipeUnlocks.isAdditionalRecipeTypeEnabled(typeId)
-                || Config.ADDITIONAL_RECIPE_TYPES.get().stream()
-                .map(value -> value.toLowerCase(Locale.ROOT))
-                .anyMatch(normalizedTypeId::equals);
+        return typeId != null && !isBuiltInRecipeType(typeId)
+                && Config.ADDITIONAL_RECIPE_TYPES.get().stream()
+                .anyMatch(value -> value.equalsIgnoreCase(typeId.toString()));
     }
 
     /**
@@ -99,17 +93,13 @@ public final class RecipeSupport {
 
         String normalizedTypeId = typeId.toString().toLowerCase(Locale.ROOT);
         if (player instanceof ServerPlayer) {
-            return RecipeUnlocks.isUnlocked(player, typeId)
-                    || Config.ADDITIONAL_RECIPE_TYPES.get().stream()
+            return Config.ADDITIONAL_RECIPE_TYPES.get().stream()
                     .map(value -> value.toLowerCase(Locale.ROOT))
                     .anyMatch(normalizedTypeId::equals);
         }
 
-        return ClientRecipeUnlocks.isUnlocked(typeId)
-                || ClientRecipeUnlocks.isAdditionalRecipeTypeEnabled(typeId)
-                || Config.ADDITIONAL_RECIPE_TYPES.get().stream()
-                .map(value -> value.toLowerCase(Locale.ROOT))
-                .anyMatch(normalizedTypeId::equals);
+        // Server-synchronized enablement is authoritative; unlocks are checked separately.
+        return ClientRecipeUnlocks.isAdditionalRecipeTypeEnabled(typeId);
     }
 
     /**
@@ -129,6 +119,9 @@ public final class RecipeSupport {
             return false;
         }
         if (isBuiltInRecipeType(effectiveTypeId) && !isBuiltInRecipeTypeEnabled(player, effectiveTypeId)) {
+            return false;
+        }
+        if (!isBuiltInRecipeType(effectiveTypeId) && !isAdditionalRecipeTypeEnabledFor(player, effectiveTypeId)) {
             return false;
         }
         if (player instanceof ServerPlayer) {

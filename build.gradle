@@ -123,6 +123,11 @@ neoForge {
 
         // applies to all the run configs above
         configureEach {
+            // IDEA's Make step does not recreate launch argument files after clean.
+            // Run the matching preparation task before launching from the IDE too.
+            def prepareTaskName = "prepare${name.substring(0, 1).toUpperCase(Locale.ROOT)}${name.substring(1)}Run"
+            taskBefore(tasks.named(prepareTaskName))
+
             // Recommended logging data for a userdev environment
             // The markers can be added/remove as needed separated by commas.
             // "SCAN": For mods scan.

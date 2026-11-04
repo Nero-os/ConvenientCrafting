@@ -1,6 +1,7 @@
 package com.adore.convenientcrafting.client.screen;
 
 import com.adore.convenientcrafting.compat.RecipeCompat;
+import com.adore.convenientcrafting.recipe.IngredientMatcher;
 import com.adore.convenientcrafting.config.Config;
 import com.adore.convenientcrafting.network.CraftRecipePacket;
 import com.adore.convenientcrafting.item.CategorizedBagItem;
@@ -1532,14 +1533,7 @@ public class CraftHelperScreen extends Screen {
     private boolean hasIngredients(List<Ingredient> ingredients) {
         if (ingredients.isEmpty()) return false;
 
-        List<ItemStack> available = getInventorySnapshot();
-        for (Ingredient ingredient : ingredients) {
-            ItemStack matched = takeFirstMatching(available, ingredient::test);
-            if (matched.isEmpty()) {
-                return false;
-            }
-        }
-        return true;
+        return IngredientMatcher.match(ingredients, getInventorySnapshot()).length == ingredients.size();
     }
 
     /**
@@ -1609,6 +1603,13 @@ public class CraftHelperScreen extends Screen {
         List<Ingredient> ingredients = RecipeSupport.getNonEmptyIngredients(recipe);
         List<ItemStack> available = getInventorySnapshot();
         DisplayIngredient[] stacks = new DisplayIngredient[ingredients.size()];
+        int[] assignment = IngredientMatcher.match(ingredients, available);
+        if (assignment.length == ingredients.size()) {
+            for (int i = 0; i < assignment.length; i++) {
+                stacks[i] = new DisplayIngredient(available.get(assignment[i]).copyWithCount(1), true);
+            }
+            return stacks;
+        }
         for (int i = 0; i < ingredients.size(); i++) {
             Ingredient ingredient = ingredients.get(i);
             stacks[i] = getDisplayIngredient(available, ingredient::test, getCyclingIngredientItem(ingredient));

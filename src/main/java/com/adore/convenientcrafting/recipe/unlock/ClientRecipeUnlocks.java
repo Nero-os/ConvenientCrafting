@@ -41,6 +41,12 @@ public final class ClientRecipeUnlocks {
         replaceSet(ENABLED_ADDITIONAL_RECIPE_TYPES, recipeTypeIds);
     }
 
+    public static void clear() {
+        setUnlockedRecipeTypes(Set.of());
+        setEnabledBuiltinRecipeTypes(Set.of());
+        setEnabledAdditionalRecipeTypes(Set.of());
+    }
+
     public static int getRevision() {
         return revision;
     }

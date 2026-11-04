@@ -1,35 +1,28 @@
 # Changelog
 
-## Unreleased
+## 1.6.1 - Unreleased
 
 ### Added
 
-- Added a Stonecutter multi-version build for Minecraft 1.21.1, 1.21.2, and 1.21.4, with separate jars and isolated run directories.
-- Integrated the previous 1.21.2 port into the shared source tree, with target-specific recipe catalogue synchronization and modern ingredient resources.
-- Added 1.21.4 recipe API, client recipe synchronization, bag registration, crafting recipe, and item model adaptations.
+- Added Minecraft 1.21.2 and 1.21.4 support alongside 1.21.1. Download the file matching your Minecraft version.
 
 ### Changed
 
-- Minecraft 1.21.2 recipe catalogues now synchronize in batches and become visible only after tag updates; reloads and disconnects discard unfinished catalogue data.
-- Shared functionality is maintained in one source tree; target dependencies and resource overrides live under `versions/`.
-- CI builds all three Minecraft targets; `buildAll` collects release jars in `build/libs/`.
-- Client recipe snapshots invalidate their indexes when recipes are synchronized or reloaded.
-
-## 1.6.1 - 2026-08-28
-
-### Changed
-
-- Craftability sorting is now precomputed in the background so the normal `G`-key experience opens directly with craftable recipes at the front.
-- Background craftability preloading now starts immediately after an isolated inventory change. Consecutive inventory changes are coalesced so dragging items or rapidly collecting drops does not repeatedly restart the calculation.
-- Recipe catalogues with more than 2,000 entries automatically use an incremental large-modpack path. Indexing, craftability checks, view rebuilding, and sort-key preparation are spread across client ticks instead of blocking the screen-opening frame.
-- Large recipe views publish their final craftable-first order as a completed update instead of moving individual recipes to the front as each check finishes.
-- Search and the craftable-only filter reuse the current craftability cache rather than triggering a complete material scan on every edit or toggle.
+- Improved opening speed and responsiveness of the Convenient Crafting panel, especially in large modpacks.
+- Improved recipe list updates after moving items or collecting drops.
+- Made searching and toggling the craftable-only filter smoother.
 
 ### Fixed
 
-- Fixed craftable recipes visibly jumping to the front one by one after opening the Convenient Crafting panel.
-- Fixed the initial panel experience potentially looking like an unfinished or continuously loading recipe list in ordinary-sized modpacks.
-- Reduced the risk of a long client hitch when opening the panel in very large modpacks such as packs containing tens of thousands of recipes.
+- Fixed craftable recipes jumping to the front one by one after opening the panel.
+- Fixed the recipe list appearing unfinished or continuously loading when opening the panel.
+- Fixed outdated recipes remaining visible after server recipe changes or reconnecting on Minecraft 1.21.2 and 1.21.4.
+- Fixed Alt inventory sorting potentially deleting bags or their contents when the inventory was full.
+- Fixed failed crafting attempts potentially consuming some materials without producing a result.
+- Fixed recipes incorrectly treating a bag and its own contents as materials that could be consumed together.
+- Fixed some recipes producing incorrect items or losing item properties and leftover containers during crafting.
+- Fixed recipes incorrectly appearing uncraftable when valid alternative ingredients were available.
+- Fixed previously unlocked extra recipe types remaining available after being disabled by the server.
 
 ## 1.6.0 - 2026-06-25
 

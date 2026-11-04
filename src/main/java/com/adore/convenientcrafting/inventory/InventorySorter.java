@@ -85,19 +85,16 @@ public class InventorySorter {
         collectInventoryAndBagContents(itemCounts, inventory, PLAYER_INVENTORY_SIZE);
         compactBuckets(itemCounts, findMineralCompactionRules(player));
 
-        for (int i = 0; i < PLAYER_INVENTORY_SIZE; i++) {
-            inventory.setItem(i, ItemStack.EMPTY);
+        // Pack copied bags before materializing root slots; unpacking can exceed 36 slots.
+        packBucketsIntoBags(itemCounts);
+        Inventory planned = new Inventory(inventory.player);
+        if (!distributeBuckets(planned, itemCounts, true, PLAYER_INVENTORY_SIZE)) {
+            sortInventory(inventory);
+            return;
         }
-
-        distributeBuckets(inventory, itemCounts, true, PLAYER_INVENTORY_SIZE);
-        compactMatchingItemsIntoBags(inventory, PLAYER_INVENTORY_SIZE);
-
-        itemCounts.clear();
-        collectContainerContents(itemCounts, inventory, PLAYER_INVENTORY_SIZE);
         for (int i = 0; i < PLAYER_INVENTORY_SIZE; i++) {
-            inventory.setItem(i, ItemStack.EMPTY);
+            inventory.setItem(i, planned.getItem(i));
         }
-        distributeBuckets(inventory, itemCounts, true, PLAYER_INVENTORY_SIZE);
     }
 
     public static void sortContainer(Container container) {
@@ -189,7 +186,7 @@ public class InventorySorter {
      * @param isPlayerInventory 是否按玩家背包的快捷栏偏好处理
      * @param <T> 容器类型
      */
-    private static <T extends Container> void distributeItems(
+    private static <T extends Container> boolean distributeItems(
             T container, List<StackBucket> sortedItems, boolean isPlayerInventory, int sortableSlots) {
         int currentSlot = 0;
 
@@ -247,20 +244,39 @@ public class InventorySorter {
                     }
                 }
 
-                if (preferredSlot != -1) {
-                    container.setItem(preferredSlot, newStack);
-                }
+                if (preferredSlot == -1) return false;
+                container.setItem(preferredSlot, newStack);
 
                 totalCount -= stackSize;
             }
         }
+        return true;
     }
 
-    private static void distributeBuckets(Container container, Map<String, StackBucket> itemCounts, boolean isPlayerInventory, int sortableSlots) {
+    private static boolean distributeBuckets(Container container, Map<String, StackBucket> itemCounts, boolean isPlayerInventory, int sortableSlots) {
         List<StackBucket> sortedItems = itemCounts.values().stream()
                 .sorted(InventorySorter::compareStacks)
                 .collect(Collectors.toList());
-        distributeItems(container, sortedItems, isPlayerInventory, sortableSlots);
+        return distributeItems(container, sortedItems, isPlayerInventory, sortableSlots);
+    }
+
+    private static void packBucketsIntoBags(Map<String, StackBucket> buckets) {
+        List<ItemStack> bags = new ArrayList<>();
+        buckets.values().removeIf(bucket -> {
+            if (!(bucket.prototype.getItem() instanceof CategorizedBagItem)) return false;
+            for (int i = 0; i < bucket.count; i++) bags.add(bucket.prototype.copyWithCount(1));
+            return true;
+        });
+        for (StackBucket bucket : buckets.values()) {
+            ItemStack remaining = bucket.prototype.copyWithCount(bucket.count);
+            for (ItemStack bag : bags) {
+                ((CategorizedBagItem) bag.getItem()).insert(bag, remaining);
+                if (remaining.isEmpty()) break;
+            }
+            bucket.count = remaining.getCount();
+        }
+        buckets.values().removeIf(bucket -> bucket.count == 0);
+        for (ItemStack bag : bags) addToBuckets(buckets, bag);
     }
 
     private static void collectContainerContents(Map<String, StackBucket> itemCounts, Container container, int sortableSlots) {
