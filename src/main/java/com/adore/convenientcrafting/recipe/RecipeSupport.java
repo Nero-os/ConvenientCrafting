@@ -1,5 +1,6 @@
 package com.adore.convenientcrafting.recipe;
 
+import com.adore.convenientcrafting.compat.RecipeCompat;
 import com.adore.convenientcrafting.config.Config;
 import com.adore.convenientcrafting.recipe.adapter.RecipeTypeAdapters;
 import com.adore.convenientcrafting.recipe.unlock.ClientRecipeUnlocks;
@@ -80,14 +81,14 @@ public final class RecipeSupport {
      */
     public static boolean isConfiguredSimpleRecipe(Recipe<?> recipe, HolderLookup.Provider registries) {
         return isAdditionalRecipeTypeEnabled(recipe)
-                && !recipe.getResultItem(registries).isEmpty()
+                && !RecipeCompat.result(recipe, registries).isEmpty()
                 && !getNonEmptyIngredients(recipe).isEmpty();
     }
 
     public static boolean isConfiguredSimpleRecipeFor(Player player, Recipe<?> recipe, HolderLookup.Provider registries) {
         ResourceLocation typeId = getRecipeTypeId(recipe);
         return isAdditionalRecipeTypeEnabledFor(player, typeId)
-                && !recipe.getResultItem(registries).isEmpty()
+                && !RecipeCompat.result(recipe, registries).isEmpty()
                 && !getNonEmptyIngredients(recipe).isEmpty();
     }
 
@@ -144,8 +145,8 @@ public final class RecipeSupport {
      */
     public static List<Ingredient> getNonEmptyIngredients(Recipe<?> recipe) {
         List<Ingredient> ingredients = new ArrayList<>();
-        for (Ingredient ingredient : recipe.getIngredients()) {
-            if (ingredient.getItems().length > 0) {
+        for (Ingredient ingredient : RecipeCompat.ingredients(recipe)) {
+            if (RecipeCompat.items(ingredient).length > 0) {
                 ingredients.add(ingredient);
             }
         }

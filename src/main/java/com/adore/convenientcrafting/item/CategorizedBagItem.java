@@ -1,5 +1,7 @@
 package com.adore.convenientcrafting.item;
 
+import com.adore.convenientcrafting.compat.ItemCompat;
+
 import java.util.List;
 
 import net.minecraft.ChatFormatting;
@@ -40,7 +42,7 @@ public class CategorizedBagItem extends Item {
     /**
      * 物品耐久条位置复用为槽位占用进度条时使用的颜色。
      */
-    private static final int BAR_COLOR = Mth.color(0.35F, 0.75F, 0.45F);
+    private static final int BAR_COLOR = 0x59BF72;
 
     /**
      * 允许被放入当前收纳袋的物品标签。
@@ -68,7 +70,7 @@ public class CategorizedBagItem extends Item {
      * @return 可以放入当前收纳袋时返回 {@code true}
      */
     public boolean accepts(ItemStack stack) {
-        return !stack.isEmpty() && stack.canFitInsideContainerItems() && stack.is(acceptedItems);
+        return !stack.isEmpty() && ItemCompat.canFitInsideContainer(stack) && stack.is(acceptedItems);
     }
 
     /**
@@ -212,10 +214,12 @@ public class CategorizedBagItem extends Item {
     /**
      * 禁止收纳袋被放入其他容器物品，避免袋子套袋子造成复杂嵌套。
      */
+    //? if <1.21.4 {
     @Override
     public boolean canFitInsideContainerItems(ItemStack stack) {
         return false;
     }
+    //?}
 
     /**
      * 兼容仍调用旧版非物品堆敏感 API 的逻辑，同样禁止袋子套袋子。

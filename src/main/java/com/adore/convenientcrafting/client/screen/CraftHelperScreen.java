@@ -1,11 +1,14 @@
 package com.adore.convenientcrafting.client.screen;
 
+import com.adore.convenientcrafting.compat.RecipeCompat;
 import com.adore.convenientcrafting.config.Config;
 import com.adore.convenientcrafting.network.CraftRecipePacket;
 import com.adore.convenientcrafting.item.CategorizedBagItem;
 import com.adore.convenientcrafting.recipe.BrewingRecipeSupport;
 import com.adore.convenientcrafting.recipe.RecipeSupport;
 import com.adore.convenientcrafting.recipe.unlock.ClientRecipeUnlocks;
+
+import com.adore.convenientcrafting.client.ClientRecipes;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -76,10 +79,8 @@ public class CraftHelperScreen extends Screen {
     private static final int RECIPE_LOAD_BATCH_SIZE = 100;
     private static final int BACKGROUND_RECIPE_LOAD_BATCH_SIZE = 100;
     private static final int CRAFTABILITY_REFRESH_BATCH_SIZE = 12;
-    private static final int SORT_CRAFTABILITY_WARMUP_RECIPES_PER_GROUP = 3;
-    private static final int SORT_CRAFTABILITY_WARMUP_RECIPE_BUDGET = 120;
-    private static final int RECIPE_VIEW_REBUILD_INITIAL_BATCH_SIZE = 160;
     private static final int RECIPE_VIEW_REBUILD_BATCH_SIZE = 240;
+    private static final int SYNCHRONOUS_RECIPE_LIMIT = 2_000;
     private static final int POST_CRAFT_REFRESH_TIMEOUT_TICKS = 10;
     private static final int KEY_ENTER = 257;
     private static final int KEY_ESCAPE = 256;
@@ -106,6 +107,9 @@ public class CraftHelperScreen extends Screen {
     private static int cachedDefaultSortedCraftableGroupCount;
     private static CraftHelperScreen backgroundIndexBuilder;
     private static CraftHelperScreen backgroundCraftabilityBuilder;
+    private static int lastObservedInventoryFingerprint;
+    private static boolean inventoryFingerprintObserved;
+    private static boolean inventoryChangedLastTick;
 
     private int panelX;
     private int panelY;
@@ -151,6 +155,7 @@ public class CraftHelperScreen extends Screen {
     private SearchQuery pendingViewSearchQuery = new SearchQuery(List.of());
     private boolean craftabilityRefreshInProgress;
     private int craftabilityRefreshGroupCursor;
+    private boolean sortViewAfterCraftabilityRefresh;
     private boolean initialized;
     private int craftabilityCacheInventoryFingerprint;
     private int pendingPostCraftRefreshTicks;
@@ -212,6 +217,21 @@ public class CraftHelperScreen extends Screen {
         }
 
         int inventoryFingerprint = computeInventoryFingerprint();
+        if (!inventoryFingerprintObserved) {
+            inventoryFingerprintObserved = true;
+            lastObservedInventoryFingerprint = inventoryFingerprint;
+            inventoryChangedLastTick = false;
+        } else if (lastObservedInventoryFingerprint != inventoryFingerprint) {
+            lastObservedInventoryFingerprint = inventoryFingerprint;
+            boolean inventoryIsContinuouslyChanging = inventoryChangedLastTick;
+            inventoryChangedLastTick = true;
+            backgroundCraftabilityBuilder = null;
+            if (inventoryIsContinuouslyChanging) {
+                return;
+            }
+        } else {
+            inventoryChangedLastTick = false;
+        }
         if (isDefaultSortedRecipeCacheValid(mc, inventoryFingerprint)) {
             return;
         }
@@ -219,7 +239,6 @@ public class CraftHelperScreen extends Screen {
                 && backgroundCraftabilityBuilder.isCraftabilityPreloadFor(mc, inventoryFingerprint)) {
             return;
         }
-
         backgroundCraftabilityBuilder = new CraftHelperScreen(false);
         backgroundCraftabilityBuilder.startCraftabilitySortPreload(inventoryFingerprint);
     }
@@ -251,6 +270,9 @@ public class CraftHelperScreen extends Screen {
     public static void stopBackgroundRecipeWork() {
         backgroundIndexBuilder = null;
         backgroundCraftabilityBuilder = null;
+        inventoryFingerprintObserved = false;
+        lastObservedInventoryFingerprint = 0;
+        inventoryChangedLastTick = false;
     }
 
     public static void clearRecipeIndexCache() {
@@ -335,7 +357,7 @@ public class CraftHelperScreen extends Screen {
 
         Set<String> seenDuplicateRecipes = new HashSet<>();
         Map<String, List<RecipeEntry>> groupedRecipes = new LinkedHashMap<>();
-        var recipeManager = mc.level.getRecipeManager();
+        var recipeManager = ClientRecipes.get();
 
         for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
             Recipe<?> recipe = holder.value();
@@ -376,6 +398,7 @@ public class CraftHelperScreen extends Screen {
         recipesLoading = false;
         waitingForBackgroundIndex = false;
         creativeTabsBuilt = false;
+        sortViewAfterCraftabilityRefresh = false;
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
@@ -385,16 +408,34 @@ public class CraftHelperScreen extends Screen {
         }
 
         if (!backgroundIndexBuild && backgroundIndexBuilder != null && backgroundIndexBuilder.isLoadingForCurrentRecipeIndex(mc)) {
-            followBackgroundIndexBuilder();
-            return;
+            if (shouldPrepareSynchronously(mc)) {
+                while (backgroundIndexBuilder != null && backgroundIndexBuilder.isLoadingForCurrentRecipeIndex(mc)) {
+                    tickRecipeIndexPreload();
+                }
+                if (tryUseCachedRecipeIndex(mc)) {
+                    return;
+                }
+            } else {
+                followBackgroundIndexBuilder();
+                return;
+            }
         }
 
-        pendingRecipeLoad.addAll(mc.level.getRecipeManager().getRecipes());
+        pendingRecipeLoad.addAll(ClientRecipes.get().getRecipes());
         totalRecipeLoadCount = pendingRecipeLoad.size();
-        loadingRecipeManager = mc.level.getRecipeManager();
+        loadingRecipeManager = ClientRecipes.get();
         loadingRecipeCount = totalRecipeLoadCount;
         loadingUnlockRevision = ClientRecipeUnlocks.getRevision();
         recipesLoading = true;
+
+        // Opening the screen is a user-driven action. Finish the remaining
+        // foreground work before the first frame so recipes never visibly
+        // stream in or move into their final positions one by one.
+        if (!backgroundIndexBuild && shouldPrepareSynchronously(mc)) {
+            while (recipesLoading) {
+                continueRecipeLoading();
+            }
+        }
     }
 
     private boolean tryUseCachedRecipeIndex(Minecraft mc) {
@@ -410,21 +451,25 @@ public class CraftHelperScreen extends Screen {
             return true;
         }
 
-        initializeRecipeViewQuickly();
-        startCraftabilityRefresh();
+        sortRecipes();
         refreshButtons();
         return true;
     }
 
+    private static boolean shouldPrepareSynchronously(Minecraft mc) {
+        return mc.level != null
+                && ClientRecipes.get().getRecipes().size() <= SYNCHRONOUS_RECIPE_LIMIT;
+    }
+
     private static boolean isRecipeIndexCacheValid(Minecraft mc) {
-        var recipeManager = mc.level.getRecipeManager();
+        var recipeManager = ClientRecipes.get();
         return cachedRecipeManager == recipeManager
                 && cachedRecipeCount == recipeManager.getRecipes().size()
                 && cachedUnlockRevision == ClientRecipeUnlocks.getRevision();
     }
 
     private static boolean isDefaultSortedRecipeCacheValid(Minecraft mc, int inventoryFingerprint) {
-        var recipeManager = mc.level.getRecipeManager();
+        var recipeManager = ClientRecipes.get();
         return cachedDefaultSortedRecipeManager == recipeManager
                 && cachedDefaultSortedRecipeCount == recipeManager.getRecipes().size()
                 && cachedDefaultSortedUnlockRevision == ClientRecipeUnlocks.getRevision()
@@ -469,8 +514,8 @@ public class CraftHelperScreen extends Screen {
 
     private boolean isCraftabilityPreloadFor(Minecraft mc, int inventoryFingerprint) {
         return !recipesLoading
-                && cachedRecipeManager == mc.level.getRecipeManager()
-                && cachedRecipeCount == mc.level.getRecipeManager().getRecipes().size()
+                && cachedRecipeManager == ClientRecipes.get()
+                && cachedRecipeCount == ClientRecipes.get().getRecipes().size()
                 && cachedUnlockRevision == ClientRecipeUnlocks.getRevision()
                 && craftabilityCacheInventoryFingerprint == inventoryFingerprint;
     }
@@ -483,7 +528,7 @@ public class CraftHelperScreen extends Screen {
         List<RecipeGroup> sortedGroups = new ArrayList<>(cachedRecipeGroups);
         sortedGroups.sort(this::compareRecipeGroups);
 
-        var recipeManager = mc.level.getRecipeManager();
+        var recipeManager = ClientRecipes.get();
         cachedDefaultSortedRecipeManager = recipeManager;
         cachedDefaultSortedRecipeCount = recipeManager.getRecipes().size();
         cachedDefaultSortedUnlockRevision = ClientRecipeUnlocks.getRevision();
@@ -511,7 +556,7 @@ public class CraftHelperScreen extends Screen {
         cachedCraftableRecipes.clear();
         int inventoryFingerprint = computeInventoryFingerprint();
         craftabilityCacheInventoryFingerprint = inventoryFingerprint;
-        var recipeManager = mc.level.getRecipeManager();
+        var recipeManager = ClientRecipes.get();
         int recipeCount = recipeManager.getRecipes().size();
         int unlockRevision = ClientRecipeUnlocks.getRevision();
         boolean cacheValid = cachedCraftabilityRecipeManager == recipeManager
@@ -544,7 +589,7 @@ public class CraftHelperScreen extends Screen {
             return;
         }
 
-        var recipeManager = mc.level.getRecipeManager();
+        var recipeManager = ClientRecipes.get();
         if (cachedCraftabilityRecipeManager == recipeManager
                 && cachedCraftabilityRecipeCount == recipeManager.getRecipes().size()
                 && cachedCraftabilityUnlockRevision == ClientRecipeUnlocks.getRevision()
@@ -617,7 +662,6 @@ public class CraftHelperScreen extends Screen {
         if (waitingForBackgroundIndex) {
             return;
         }
-
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) {
             recipesLoading = false;
@@ -643,16 +687,15 @@ public class CraftHelperScreen extends Screen {
                 return;
             }
 
-            initializeRecipeViewQuickly();
-            startCraftabilityRefresh();
+            sortRecipes();
             refreshButtons();
         }
     }
 
     private boolean isLoadingForCurrentRecipeIndex(Minecraft mc) {
         return recipesLoading
-                && loadingRecipeManager == mc.level.getRecipeManager()
-                && loadingRecipeCount == mc.level.getRecipeManager().getRecipes().size()
+                && loadingRecipeManager == ClientRecipes.get()
+                && loadingRecipeCount == ClientRecipes.get().getRecipes().size()
                 && loadingUnlockRevision == ClientRecipeUnlocks.getRevision();
     }
 
@@ -667,7 +710,7 @@ public class CraftHelperScreen extends Screen {
     }
 
     private void storeRecipeIndexCache(Minecraft mc) {
-        var recipeManager = mc.level.getRecipeManager();
+        var recipeManager = ClientRecipes.get();
         cachedRecipeManager = recipeManager;
         cachedRecipeCount = recipeManager.getRecipes().size();
         cachedUnlockRevision = ClientRecipeUnlocks.getRevision();
@@ -715,9 +758,7 @@ public class CraftHelperScreen extends Screen {
                 .map(ItemStack::new)
                 .filter(potionBrewing::isIngredient)
                 .toList();
-        List<Holder.Reference<Potion>> potions = mc.level.registryAccess()
-                .registryOrThrow(Registries.POTION)
-                .holders()
+        List<Holder.Reference<Potion>> potions = RecipeCompat.potions(mc.level.registryAccess())
                 .filter(potionBrewing::isBrewablePotion)
                 .toList();
 
@@ -815,26 +856,36 @@ public class CraftHelperScreen extends Screen {
      * 最后使用产物名称做稳定兜底排序。可合成状态会预先缓存，避免排序比较器反复扫描背包。</p>
      */
     private void sortRecipes() {
-        sortRecipes(true);
+        Minecraft mc = Minecraft.getInstance();
+        if (shouldPrepareSynchronously(mc)) {
+            sortRecipes(true);
+            return;
+        }
+
+        // Huge modpacks can expose tens of thousands of recipes. Publish a
+        // usable view immediately, then calculate craftability in small tick
+        // batches and replace the ordering once when the pass is complete.
+        sortRecipes(false);
+        startCraftabilityRefresh();
+        sortViewAfterCraftabilityRefresh = true;
     }
 
     private void sortRecipes(boolean refreshCraftability) {
         if (refreshCraftability) {
             startCraftabilityRefresh();
+            while (!isCraftabilityRefreshComplete()) {
+                continueCraftabilityRefresh();
+            }
         }
 
         startRecipeViewRebuild();
-        continueRecipeViewRebuild(RECIPE_VIEW_REBUILD_INITIAL_BATCH_SIZE);
-    }
-
-    private void initializeRecipeViewQuickly() {
-        startRecipeViewRebuild();
-        continueRecipeViewRebuild(RECIPE_VIEW_REBUILD_INITIAL_BATCH_SIZE);
+        Minecraft mc = Minecraft.getInstance();
+        continueRecipeViewRebuild(shouldPrepareSynchronously(mc)
+                ? Integer.MAX_VALUE
+                : RECIPE_VIEW_REBUILD_BATCH_SIZE);
     }
 
     private void startRecipeViewRebuild() {
-        warmUpCraftabilityForSorting();
-
         pendingViewRecipeGroups.clear();
         pendingViewCraftableGroupCount = 0;
         recipeViewRebuildCursor = 0;
@@ -857,6 +908,10 @@ public class CraftHelperScreen extends Screen {
             RecipeGroup group = allRecipeGroups.get(recipeViewRebuildCursor++);
             if (matchesFilters(group, cachedCraftableRecipes, pendingViewSearchQuery)) {
                 pendingViewRecipeGroups.add(group);
+                // Precompute the stable sort key inside the existing batch so
+                // a huge catalogue does not create every display name during
+                // the final List.sort call on one client tick.
+                getRecipeGroupSortKey(group);
                 if (canCraftAnyRecipe(group, cachedCraftableRecipes)) {
                     pendingViewCraftableGroupCount++;
                 }
@@ -864,53 +919,16 @@ public class CraftHelperScreen extends Screen {
             processed++;
         }
 
-        viewRecipeGroups = pendingViewRecipeGroups;
-        filteredRecipeCount = recipeViewRebuildCursor >= allRecipeGroups.size()
-                ? pendingViewRecipeGroups.size()
-                : Math.max(pendingViewRecipeGroups.size(), allRecipeGroups.size());
-        filteredCraftableGroupCount = pendingViewCraftableGroupCount;
-
         if (recipeViewRebuildCursor >= allRecipeGroups.size()) {
             recipeViewRebuildInProgress = false;
-            viewRecipeGroups.sort(this::compareRecipeGroups);
+            List<RecipeGroup> completedView = new ArrayList<>(pendingViewRecipeGroups);
+            completedView.sort(this::compareRecipeGroups);
+            viewRecipeGroups = completedView;
             filteredRecipeCount = viewRecipeGroups.size();
             filteredCraftableGroupCount = pendingViewCraftableGroupCount;
-        }
-
-        clampCurrentPage();
-        materializeCurrentPage();
-        refreshCurrentPageCraftability();
-        materializeCurrentPage();
-    }
-
-    private void warmUpCraftabilityForSorting() {
-        if (isCreativeMode()) {
-            return;
-        }
-
-        int remainingRecipeBudget = SORT_CRAFTABILITY_WARMUP_RECIPE_BUDGET;
-        for (RecipeGroup group : allRecipeGroups) {
-            if (remainingRecipeBudget <= 0) {
-                return;
-            }
-            int checked = 0;
-            for (RecipeEntry entry : group.recipes()) {
-                if (cachedCraftableRecipes.containsKey(entry.id())) {
-                    if (Boolean.TRUE.equals(cachedCraftableRecipes.get(entry.id()))) {
-                        break;
-                    }
-                } else if (remainingRecipeBudget > 0) {
-                    cacheCraftableState(entry.id(), canCraftEntry(entry));
-                    remainingRecipeBudget--;
-                } else {
-                    break;
-                }
-
-                checked++;
-                if (checked >= SORT_CRAFTABILITY_WARMUP_RECIPES_PER_GROUP) {
-                    break;
-                }
-            }
+            clampCurrentPage();
+            materializeCurrentPage();
+            refreshCurrentPageCraftability();
         }
     }
 
@@ -948,16 +966,6 @@ public class CraftHelperScreen extends Screen {
         fingerprint = 31 * fingerprint + stack.getCount();
         fingerprint = 31 * fingerprint + stack.getComponentsPatch().hashCode();
         return fingerprint;
-    }
-
-    private int countCraftableGroupsInView() {
-        int count = 0;
-        for (RecipeGroup group : viewRecipeGroups) {
-            if (canCraftAnyRecipe(group, cachedCraftableRecipes)) {
-                count++;
-            }
-        }
-        return count;
     }
 
     private void clampCurrentPage() {
@@ -1045,35 +1053,30 @@ public class CraftHelperScreen extends Screen {
         }
 
         int processed = 0;
-        boolean craftableStateChanged = false;
         while (processed < CRAFTABILITY_REFRESH_BATCH_SIZE) {
             while (pendingCraftabilityRefresh.isEmpty() && craftabilityRefreshGroupCursor < allRecipeGroups.size()) {
-                pendingCraftabilityRefresh.addAll(allRecipeGroups.get(craftabilityRefreshGroupCursor++).recipes());
+                for (RecipeEntry entry : allRecipeGroups.get(craftabilityRefreshGroupCursor++).recipes()) {
+                    if (!cachedCraftableRecipes.containsKey(entry.id())) {
+                        pendingCraftabilityRefresh.add(entry);
+                    }
+                }
             }
             if (pendingCraftabilityRefresh.isEmpty()) {
                 break;
             }
 
             RecipeEntry entry = pendingCraftabilityRefresh.remove(pendingCraftabilityRefresh.size() - 1);
-            boolean previousCraftable = cachedCraftableRecipes.getOrDefault(entry.id(), false);
             boolean craftable = canCraftEntry(entry);
             cacheCraftableState(entry.id(), craftable);
-            if (previousCraftable != craftable) {
-                craftableStateChanged = true;
-            }
             processed++;
-        }
-
-        if (craftableStateChanged) {
-            filteredCraftableGroupCount = countCraftableGroupsInView();
-            materializeCurrentPage();
-            refreshButtons();
         }
 
         if (pendingCraftabilityRefresh.isEmpty() && craftabilityRefreshGroupCursor >= allRecipeGroups.size()) {
             craftabilityRefreshInProgress = false;
-            filteredCraftableGroupCount = countCraftableGroupsInView();
-            materializeCurrentPage();
+            if (sortViewAfterCraftabilityRefresh) {
+                sortViewAfterCraftabilityRefresh = false;
+                sortRecipes(false);
+            }
             refreshButtons();
         }
     }
@@ -1585,9 +1588,9 @@ public class CraftHelperScreen extends Screen {
 
             List<ItemStack> available = getInventorySnapshot();
             return new DisplayIngredient[] {
-                    getDisplayIngredient(available, smithingRecipe::isTemplateIngredient),
-                    getDisplayIngredient(available, smithingRecipe::isBaseIngredient),
-                    getDisplayIngredient(available, smithingRecipe::isAdditionIngredient)
+                    getDisplayIngredient(available, stack -> RecipeCompat.isTemplateIngredient(smithingRecipe, stack)),
+                    getDisplayIngredient(available, stack -> RecipeCompat.isBaseIngredient(smithingRecipe, stack)),
+                    getDisplayIngredient(available, stack -> RecipeCompat.isAdditionIngredient(smithingRecipe, stack))
             };
         }
 
@@ -1626,7 +1629,7 @@ public class CraftHelperScreen extends Screen {
     }
 
     private ItemStack getCyclingIngredientItem(Ingredient ingredient) {
-        ItemStack[] matching = ingredient.getItems();
+        ItemStack[] matching = RecipeCompat.items(ingredient);
         if (matching.length == 0) {
             return ItemStack.EMPTY;
         }
@@ -1693,7 +1696,7 @@ public class CraftHelperScreen extends Screen {
             }
         }
 
-        return recipe.getResultItem(mc.level.registryAccess());
+        return RecipeCompat.result(recipe, mc.level.registryAccess());
     }
 
     /**
@@ -1738,13 +1741,13 @@ public class CraftHelperScreen extends Screen {
     private SmithingMatch findSmithingMatch(SmithingRecipe recipe) {
         List<ItemStack> available = getInventorySnapshot();
 
-        ItemStack template = takeFirstMatching(available, recipe::isTemplateIngredient);
+        ItemStack template = takeFirstMatching(available, stack -> RecipeCompat.isTemplateIngredient(recipe, stack));
         if (template.isEmpty()) return null;
 
-        ItemStack base = takeFirstMatching(available, recipe::isBaseIngredient);
+        ItemStack base = takeFirstMatching(available, stack -> RecipeCompat.isBaseIngredient(recipe, stack));
         if (base.isEmpty()) return null;
 
-        ItemStack addition = takeFirstMatching(available, recipe::isAdditionIngredient);
+        ItemStack addition = takeFirstMatching(available, stack -> RecipeCompat.isAdditionIngredient(recipe, stack));
         if (addition.isEmpty()) return null;
 
         return new SmithingMatch(template, base, addition);
@@ -1908,7 +1911,7 @@ public class CraftHelperScreen extends Screen {
 
     private record RecipeEntry(ResourceLocation id, Recipe<?> recipe, BrewingRecipeEntry brewing) {
         private static RecipeEntry fromRecipe(RecipeHolder<?> holder) {
-            return new RecipeEntry(holder.id(), holder.value(), null);
+            return new RecipeEntry(RecipeCompat.id(holder), holder.value(), null);
         }
 
         private static RecipeEntry fromBrewing(BrewingRecipeEntry brewing) {
@@ -1971,7 +1974,7 @@ public class CraftHelperScreen extends Screen {
         if (sortedRecipeGroups.isEmpty()) {
             String emptyText = recipesLoading
                     ? "加载配方中... " + loadedRecipeCount + "/" + totalRecipeLoadCount
-                    : "没有匹配的配方";
+                    : recipeViewRebuildInProgress ? "正在整理配方列表..." : "没有匹配的配方";
             guiGraphics.drawString(font, emptyText, panelX + panelWidth / 2 - font.width(emptyText) / 2, panelY + LIST_Y_OFFSET + 52, 0xFFAAAAAA, false);
         }
 
@@ -2377,7 +2380,7 @@ public class CraftHelperScreen extends Screen {
         if (isInside(mouseX, mouseY, panelX + 10, controlsY + 3, 64, 14)) {
             onlyCraftable = !onlyCraftable;
             currentPage = 0;
-            sortRecipes();
+            sortRecipes(false);
             refreshButtons();
             return true;
         }
@@ -2749,7 +2752,7 @@ public class CraftHelperScreen extends Screen {
         searchViewStart = Math.min(clampSearchIndex(searchViewStart), searchCursor);
         searchAllSelected = false;
         currentPage = 0;
-        sortRecipes();
+        sortRecipes(false);
         refreshButtons();
         ensureSearchCursorVisible(getSearchTextWidth());
     }

@@ -14,7 +14,9 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.gui.components.Button;
+//? if <1.21.4 {
 import net.minecraft.client.renderer.item.ItemProperties;
+//?}
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
@@ -89,14 +91,19 @@ public class ConvenientCraftingClient {
      */
     @SubscribeEvent
     static void onClientSetup(FMLClientSetupEvent event) {
+        //? if <1.21.4 {
         event.enqueueWork(ConvenientCraftingClient::registerBagItemProperties);
+        //?}
     }
 
+    //? if <1.21.4 {
     private static void registerBagItemProperties() {
         ItemProperties.register(ModItems.SEED_BAG.get(), FILLED_PROPERTY, (stack, level, entity, seed) -> hasBagContents(stack) ? 1.0F : 0.0F);
         ItemProperties.register(ModItems.DYE_BAG.get(), FILLED_PROPERTY, (stack, level, entity, seed) -> hasBagContents(stack) ? 1.0F : 0.0F);
         ItemProperties.register(ModItems.MINERAL_BAG.get(), FILLED_PROPERTY, (stack, level, entity, seed) -> hasBagContents(stack) ? 1.0F : 0.0F);
     }
+
+    //?}
 
     private static boolean hasBagContents(ItemStack stack) {
         for (ItemStack content : CategorizedBagItem.getContents(stack)) {
@@ -139,8 +146,25 @@ public class ConvenientCraftingClient {
 
     @SubscribeEvent
     static void onClientLogout(ClientPlayerNetworkEvent.LoggingOut event) {
+        ClientRecipes.clear();
         CraftHelperScreen.clearRecipeIndexCache();
     }
+
+    //? if >=1.21.4 {
+    /*@SubscribeEvent
+    static void onRecipesReceived(net.neoforged.neoforge.client.event.RecipesReceivedEvent event) {
+        ClientRecipes.replace(event.getRecipeMap(), event.getRecipeMap().values());
+        CraftHelperScreen.clearRecipeIndexCache();
+        CraftHelperScreen.preloadRecipeIndex();
+    }
+    *///?} else {
+    @SubscribeEvent
+    static void onRecipesUpdated(net.neoforged.neoforge.client.event.RecipesUpdatedEvent event) {
+        ClientRecipes.replace(event.getRecipeManager(), event.getRecipeManager().getRecipes());
+        CraftHelperScreen.clearRecipeIndexCache();
+        CraftHelperScreen.preloadRecipeIndex();
+    }
+    //?}
 
     /**
      * 监听客户端按键输入并打开合成助手界面。

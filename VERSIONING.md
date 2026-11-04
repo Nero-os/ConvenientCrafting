@@ -1,66 +1,81 @@
-# Versioning and Porting Guide
+# Multi-version development
 
-Convenient Crafting is currently maintained as a Minecraft 1.21.1 NeoForge mod.
+Convenient Crafting uses Stonecutter 0.9.8 to build Minecraft 1.21.1 and 1.21.4 from one source tree. Both targets require Java 21.
 
-## Current target
+| Minecraft | NeoForge build dependency | Runtime range | Parchment |
+| --- | --- | --- | --- |
+| 1.21.1 | 21.1.220 | [21.1.0,21.2.0) | 1.21.1 / 2024.11.17 |
+| 1.21.4 | 21.4.161 | [21.4.161,21.5.0) | 1.21.4 / 2025.03.23 |
 
-| Field | Value | Source |
-| --- | --- | --- |
-| Minecraft compile target | `1.21.1` | `minecraft_version` |
-| Minecraft declared range | `[1.21.1]` | `minecraft_version_range` |
-| NeoForge compile target | `21.1.220` | `neo_version` |
-| NeoForge declared range | `[21.1.0,21.2.0)` | `neo_version_range` |
-| Java target | `21` | `build.gradle` |
-| Parchment mappings | `1.21.1 / 2024.11.17` | `parchment_*` |
+Each jar declares its exact Minecraft target. Do not broaden the range without testing every included version.
 
-The declared Minecraft range is intentionally exact. Do not broaden it until the mod has been compiled and tested on every Minecraft version included by the range.
+## Layout
 
-## Recommended branch model
+- `settings.gradle`: supported versions and the VCS baseline (1.21.1).
+- `stonecutter.gradle`: active IDE version and the `buildAll` task.
+- `build.gradle`: shared ModDevGradle configuration.
+- `gradle.properties`: shared mod identity and release version.
+- `versions/<minecraft>/gradle.properties`: Minecraft, NeoForge, loader, and mappings dependencies.
+- `src/main`: shared Java, templates, and resources.
+- `versions/<minecraft>/src/main`: version-specific resource overrides, merged by Stonecutter.
+- `compat/RecipeCompat.java`: recipe API adaptations using Stonecutter version conditions.
+- `client/ClientRecipes.java`: client recipe snapshot with cache invalidation on synchronization.
 
-Use one long-lived branch per Minecraft version:
+Edit shared sources under `src/`, not the generated files under `versions/*/build/generated/stonecutter/`.
 
-| Branch | Purpose |
-| --- | --- |
-| `main` | Current stable development target. |
-| `mc/1.21.1` | Optional release maintenance branch for Minecraft 1.21.1. |
-| `mc/1.21.x` | Port branch for a newer 1.21 patch line after choosing a concrete target version. |
+## Build and run
 
-Keep release jars separate per Minecraft branch. A jar built for one Minecraft version should not be uploaded as compatible with another version until it has been tested there.
+Windows commands (use `./gradlew` on Linux/macOS):
 
-## Port checklist
+```powershell
+# Compile, check, and collect both release jars in build/libs/.
+.\gradlew.bat buildAll
 
-When starting a new Minecraft/NeoForge target:
+# Build or run one target explicitly; these do not switch the shared source tree.
+.\gradlew.bat :1.21.1:build
+.\gradlew.bat :1.21.4:build
+.\gradlew.bat :1.21.1:runClient
+.\gradlew.bat :1.21.4:runClient
+.\gradlew.bat :1.21.4:runServer
 
-1. Create a new branch from the closest working version.
-2. Update `gradle.properties`:
-   - `minecraft_version`
-   - `minecraft_version_range`
-   - `neo_version`
-   - `neo_version_range`
-   - `parchment_minecraft_version`
-   - `parchment_mappings_version`
-3. Refresh Gradle and run `.\gradlew.bat build`.
-4. Fix compile errors caused by Minecraft or NeoForge API changes.
-5. Run a client and check:
-   - inventory sort button and keybind;
-   - craft helper screen;
-   - nested crafting;
-   - recipe unlock synchronization;
-   - dye bag and seed bag pickup/storage behavior.
-6. Run a dedicated server and check that the mod loads without client-only class errors.
-7. Update README badges and supported version text for the branch.
-8. Publish the jar only for the tested Minecraft and NeoForge range.
+# Change the IDE's active source version. Stonecutter rewrites its version comments.
+.\gradlew.bat "Set active project to 1.21.4"
 
-## Known API areas to review
+# Restore the 1.21.1 source baseline before committing.
+.\gradlew.bat "Reset active project"
+```
 
-These code areas are likely to need attention during ports:
+Run directories are isolated under `versions/<minecraft>/run/`. Do not copy worlds between versions just to test the mod. Minecraft artifact generation is serialized to avoid decompiling two versions concurrently.
 
-| Area | Why it matters |
-| --- | --- |
-| `DataComponents` and `ItemContainerContents` | Item data storage changed significantly between Minecraft versions. |
-| `CustomPacketPayload`, `StreamCodec`, and NeoForge payload registration | Network APIs are version-sensitive. |
-| `RecipeHolder`, recipe lookup, and recipe result APIs | Recipe manager APIs often change between Minecraft releases. |
-| Client screen classes and button APIs | GUI constructors and rendering helpers can shift between versions. |
-| Creative tab registration | Registry and tab event APIs can change with NeoForge updates. |
+Release jars are named `convenientcrafting-<mod_version>-neoforge-mc<minecraft_version>.jar`. Keep both jars in the same release when appropriate, and tag each download only with its own Minecraft version. Updating the mod version does not require duplicating shared code or creating a branch per Minecraft version.
 
-For backports to Minecraft 1.20.1, expect a real code port rather than a version-property change.
+## 1.21.4 adaptations
+
+- Recipe identifiers use resource keys; ingredients and result previews use the new placement/display APIs.
+- NeoForge's `OnDatapackSyncEvent.sendRecipes` synchronizes built-in and configured recipe types on login and datapack reload. `RecipesReceivedEvent` replaces the client snapshot and invalidates recipe indexes, including same-size reloads.
+- Craft execution stays on the server and resolves the original server recipe by id; client data never supplies an authoritative result.
+- Configured custom simple recipe types on 1.21.4 must expose usable placement ingredients and result displays through the new recipe APIs.
+- Classification bags set their item registry keys before construction.
+- Version-specific recipe JSON uses the 1.21.4 ingredient format.
+- Version-specific item definitions select empty/filled bag models using the container component, replacing legacy item predicates.
+- Data generation uses `clientData` for 1.21.4 and `data` for 1.21.1.
+
+## Adding another target
+
+1. Add the version in `settings.gradle` and to `buildAll`/the CI matrix.
+2. Add its dependency properties under `versions/<minecraft>/`.
+3. Add localized Stonecutter conditions or version-specific overrides for changed APIs/resources.
+4. Build every existing target to catch regressions.
+5. Check a client and a dedicated server before publishing:
+   - Login, disconnect/reconnect to another server, and `/reload` (including changed recipes with the same count).
+   - Recipe search, craftability ordering, workstation unlocks, direct/batch/nested crafting, and missing-material trees.
+   - Ingredient consumption, container remainders, full inventories, and armor/offhand handling.
+   - Inventory/container sorting and Alt mineral compaction.
+   - Bag recipes, item names, empty/filled models, pickup/storage, and optional bag configuration.
+   - Configured additional recipe types and representative modpack recipes.
+
+Successful compilation alone does not establish compatibility with every modpack or replace these gameplay checks.
+
+## Automated checks
+
+`build` and `buildAll` run NeoForge JUnit tests against real loaded server datapacks for both targets. These check repeated shaped ingredients, shapeless output counts and tags, bag registration and conditional recipes, crafting remainders, and bag nesting/storage. The 1.21.4 target additionally checks that full workstation recipes are requested for client synchronization. Run a single target with `.\gradlew.bat :1.21.4:test`.

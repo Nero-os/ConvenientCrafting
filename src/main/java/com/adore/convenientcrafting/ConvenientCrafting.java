@@ -9,6 +9,7 @@ import com.adore.convenientcrafting.network.CraftRecipePacket;
 import com.adore.convenientcrafting.network.NestedCraftingMissingMaterialsPacket;
 import com.adore.convenientcrafting.network.RecipeUnlockSyncPacket;
 import com.adore.convenientcrafting.network.SortInventoryPacket;
+import com.adore.convenientcrafting.recipe.RecipeSynchronization;
 import com.adore.convenientcrafting.recipe.unlock.RecipeUnlocks;
 import com.adore.convenientcrafting.registry.ModBlocks;
 import com.adore.convenientcrafting.registry.ModConditions;
@@ -60,6 +61,8 @@ public class ConvenientCrafting {
         NeoForge.EVENT_BUS.register(new BagPickupEvents());
         NeoForge.EVENT_BUS.register(new RecipeUnlocks());
         NeoForge.EVENT_BUS.register(new RecipeUnlockCommands());
+
+        NeoForge.EVENT_BUS.addListener(RecipeSynchronization::onDatapackSync);
 
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
     }

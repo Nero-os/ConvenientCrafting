@@ -1,5 +1,6 @@
 package com.adore.convenientcrafting.command;
 
+import com.adore.convenientcrafting.compat.RecipeCompat;
 import com.adore.convenientcrafting.config.Config;
 import com.adore.convenientcrafting.recipe.RecipeSupport;
 import com.adore.convenientcrafting.recipe.adapter.RecipeTypeAdapters;
@@ -74,7 +75,7 @@ public final class RecipeUnlockCommands {
                                 .then(Commands.argument("recipe_id", ResourceLocationArgument.id())
                                         .suggests((context, builder) -> SharedSuggestionProvider.suggest(
                                                 context.getSource().getServer().getRecipeManager().getRecipes().stream()
-                                                        .map(holder -> holder.id().toString()),
+                                                        .map(holder -> RecipeCompat.id(holder).toString()),
                                                 builder))
                                         .executes(this::diagnoseRecipe)))
         );
@@ -206,7 +207,7 @@ public final class RecipeUnlockCommands {
         CommandSourceStack source = context.getSource();
         ResourceLocation recipeId = ResourceLocationArgument.getId(context, "recipe_id");
         Optional<RecipeHolder<?>> holder = source.getServer().getRecipeManager().getRecipes().stream()
-                .filter(candidate -> candidate.id().equals(recipeId))
+                .filter(candidate -> RecipeCompat.id(candidate).equals(recipeId))
                 .findFirst();
 
         if (holder.isEmpty()) {
@@ -218,9 +219,9 @@ public final class RecipeUnlockCommands {
         HolderLookup.Provider registries = source.getServer().registryAccess();
         Recipe<?> recipe = holder.get().value();
         ResourceLocation typeId = RecipeSupport.getRecipeTypeId(recipe);
-        ItemStack result = recipe.getResultItem(registries);
+        ItemStack result = RecipeCompat.result(recipe, registries);
 
-        send(source, "commands.convenientcrafting.diagnostics.recipe.header", holder.get().id().toString());
+        send(source, "commands.convenientcrafting.diagnostics.recipe.header", RecipeCompat.id(holder.get()).toString());
         send(source, "commands.convenientcrafting.diagnostics.recipe.type", formatId(typeId));
         send(source, "commands.convenientcrafting.diagnostics.recipe.registered_type", yesNo(typeId != null && isRecipeTypeRegistered(typeId)));
         send(source, "commands.convenientcrafting.diagnostics.recipe.built_in", yesNo(typeId != null && RecipeSupport.isBuiltInRecipeType(typeId)));
@@ -236,10 +237,10 @@ public final class RecipeUnlockCommands {
     private static void sendRecipeSummary(CommandSourceStack source, RecipeHolder<?> holder, HolderLookup.Provider registries, ServerPlayer player) {
         Recipe<?> recipe = holder.value();
         ResourceLocation typeId = RecipeSupport.getRecipeTypeId(recipe);
-        ItemStack result = recipe.getResultItem(registries);
+        ItemStack result = RecipeCompat.result(recipe, registries);
         send(source,
                 "commands.convenientcrafting.diagnostics.result.entry",
-                holder.id().toString(),
+                RecipeCompat.id(holder).toString(),
                 formatId(typeId),
                 yesNo(typeId != null && isTypeConfigured(typeId)),
                 typeId == null ? "no" : playerUnlockedText(player, typeId),
@@ -322,19 +323,19 @@ public final class RecipeUnlockCommands {
     private static List<RecipeHolder<?>> findRecipesByResult(MinecraftServer server, ResourceLocation itemId) {
         HolderLookup.Provider registries = server.registryAccess();
         return server.getRecipeManager().getRecipes().stream()
-                .filter(holder -> itemId.equals(BuiltInRegistries.ITEM.getKey(holder.value().getResultItem(registries).getItem())))
-                .sorted(Comparator.comparing(holder -> holder.id().toString()))
+                .filter(holder -> itemId.equals(BuiltInRegistries.ITEM.getKey(RecipeCompat.result(holder.value(), registries).getItem())))
+                .sorted(Comparator.comparing(holder -> RecipeCompat.id(holder).toString()))
                 .toList();
     }
 
     private static boolean isSimpleCompatible(Recipe<?> recipe, HolderLookup.Provider registries) {
-        return !recipe.getResultItem(registries).isEmpty()
+        return !RecipeCompat.result(recipe, registries).isEmpty()
                 && !RecipeSupport.getNonEmptyIngredients(recipe).isEmpty();
     }
 
     private static boolean isSupportedForDisplay(ServerPlayer player, Recipe<?> recipe, HolderLookup.Provider registries) {
         boolean builtInSupported = RecipeSupport.isBuiltInSupported(recipe)
-                && !recipe.getResultItem(registries).isEmpty();
+                && !RecipeCompat.result(recipe, registries).isEmpty();
         if (player == null) {
             return builtInSupported
                     || RecipeSupport.isConfiguredSimpleRecipe(recipe, registries);

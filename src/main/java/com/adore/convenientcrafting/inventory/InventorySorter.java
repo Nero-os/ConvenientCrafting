@@ -1,5 +1,6 @@
 package com.adore.convenientcrafting.inventory;
 
+import com.adore.convenientcrafting.compat.RecipeCompat;
 import com.adore.convenientcrafting.item.CategorizedBagItem;
 import com.adore.convenientcrafting.registry.ModItems;
 
@@ -310,14 +311,14 @@ public class InventorySorter {
                 continue;
             }
 
-            List<Ingredient> ingredients = craftingRecipe.getIngredients().stream()
-                    .filter(ingredient -> ingredient.getItems().length > 0)
+            List<Ingredient> ingredients = RecipeCompat.ingredients(craftingRecipe).stream()
+                    .filter(ingredient -> RecipeCompat.items(ingredient).length > 0)
                     .toList();
             if (ingredients.size() < 2) {
                 continue;
             }
 
-            ItemStack result = craftingRecipe.getResultItem(server.registryAccess()).copy();
+            ItemStack result = RecipeCompat.result(craftingRecipe, server.registryAccess()).copy();
             if (result.isEmpty() || result.getCount() != 1 || !result.is(ModItems.MINERALS)) {
                 continue;
             }
@@ -339,13 +340,13 @@ public class InventorySorter {
     }
 
     private static List<ItemStack> findRepeatedIngredientOptions(List<Ingredient> ingredients) {
-        ItemStack[] firstOptions = ingredients.get(0).getItems();
+        ItemStack[] firstOptions = RecipeCompat.items(ingredients.get(0));
         if (firstOptions.length == 0) {
             return List.of();
         }
 
         for (Ingredient ingredient : ingredients) {
-            ItemStack[] options = ingredient.getItems();
+            ItemStack[] options = RecipeCompat.items(ingredient);
             if (options.length != firstOptions.length) {
                 return List.of();
             }

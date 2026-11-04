@@ -1,5 +1,6 @@
 package com.adore.convenientcrafting.recipe.adapter;
 
+import com.adore.convenientcrafting.compat.RecipeCompat;
 import com.adore.convenientcrafting.recipe.RecipeSupport;
 
 import net.minecraft.core.HolderLookup;
@@ -75,7 +76,7 @@ public final class RecipeTypeAdapters {
     }
 
     private static String buildTypedDuplicateKey(Recipe<?> recipe, HolderLookup.Provider registries) {
-        ItemStack result = recipe.getResultItem(registries);
+        ItemStack result = RecipeCompat.result(recipe, registries);
         List<String> ingredientKeys = RecipeSupport.getNonEmptyIngredients(recipe).stream()
                 .map(RecipeTypeAdapters::ingredientKey)
                 .sorted()
@@ -91,7 +92,7 @@ public final class RecipeTypeAdapters {
     }
 
     private static String ingredientKey(Ingredient ingredient) {
-        return Arrays.stream(ingredient.getItems())
+        return Arrays.stream(RecipeCompat.items(ingredient))
                 .map(RecipeTypeAdapters::resultKey)
                 .sorted()
                 .collect(Collectors.joining(","));

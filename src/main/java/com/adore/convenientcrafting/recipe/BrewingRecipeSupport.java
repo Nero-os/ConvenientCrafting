@@ -85,7 +85,11 @@ public final class BrewingRecipeSupport {
             return ItemStack.EMPTY;
         }
 
+        //? if >=1.21.4 {
+        /*Optional<Holder.Reference<Potion>> potion = registries.lookupOrThrow(Registries.POTION).get(potionId);
+        *///?} else {
         Optional<Holder.Reference<Potion>> potion = registries.registryOrThrow(Registries.POTION).getHolder(potionId);
+        //?}
         return potion
                 .map(holder -> PotionContents.createItemStack(container.get(), holder))
                 .orElse(ItemStack.EMPTY);

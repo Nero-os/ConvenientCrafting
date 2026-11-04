@@ -1,5 +1,7 @@
 package com.adore.convenientcrafting.network;
 
+import com.adore.convenientcrafting.compat.RecipeCompat;
+import com.adore.convenientcrafting.compat.ItemCompat;
 import com.adore.convenientcrafting.ConvenientCrafting;
 import com.adore.convenientcrafting.config.Config;
 import com.adore.convenientcrafting.item.CategorizedBagItem;
@@ -138,7 +140,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             return;
         }
 
-        var optional = server.getRecipeManager().byKey(recipeId);
+        var optional = RecipeCompat.byId(server.getRecipeManager(), recipeId);
         if (optional.isEmpty()) return;
 
         Recipe<?> recipe = optional.get().value();
@@ -174,12 +176,12 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             return buildCreativeBrewingResult(player, recipeId);
         }
 
-        var optional = server.getRecipeManager().byKey(recipeId);
+        var optional = RecipeCompat.byId(server.getRecipeManager(), recipeId);
         if (optional.isEmpty()) return ItemStack.EMPTY;
         Recipe<?> recipe = optional.get().value();
         if (!RecipeSupport.isUnlockedFor(player, recipe)) return ItemStack.EMPTY;
 
-        return recipe.getResultItem(server.registryAccess()).copy();
+        return RecipeCompat.result(recipe, server.registryAccess()).copy();
     }
 
     private static ItemStack buildCreativeBrewingResult(ServerPlayer player, ResourceLocation recipeId) {
@@ -206,7 +208,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         if (BrewingRecipeSupport.isBrewingRecipeId(recipeId)) {
             simulation = simulateNestedBrewing(player, recipeId);
         } else {
-            var optional = server.getRecipeManager().byKey(recipeId);
+            var optional = RecipeCompat.byId(server.getRecipeManager(), recipeId);
             if (optional.isEmpty()) return;
 
             targetHolder = optional.get();
@@ -243,7 +245,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         var server = player.getServer();
         if (server == null) return false;
 
-        var planned = server.getRecipeManager().byKey(recipeId);
+        var planned = RecipeCompat.byId(server.getRecipeManager(), recipeId);
         return planned.isPresent() && finishCrafting(player, buildCraftingResult(player, planned.get().value()));
     }
 
@@ -326,7 +328,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> rows = new ArrayList<>();
         MaterialPool pool = MaterialPool.fromPlayer(player);
         NestedCraftingContext context = new NestedCraftingContext();
-        ItemStack target = targetHolder.value().getResultItem(player.registryAccess()).copy();
+        ItemStack target = RecipeCompat.result(targetHolder.value(), player.registryAccess()).copy();
         if (!target.isEmpty()) {
             rows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(target, false, 0));
         }
@@ -389,7 +391,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
     ) {
         Recipe<?> recipe = holder.value();
         if (!RecipeSupport.isUnlockedFor(player, recipe)
-                || visiting.contains(holder.id())
+                || visiting.contains(RecipeCompat.id(holder))
                 || depth > MAX_NESTED_SEARCH_DEPTH
                 || rows.size() >= MAX_MISSING_TREE_ROWS
                 || !context.tryUseStep()) {
@@ -401,7 +403,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             return false;
         }
 
-        visiting.add(holder.id());
+        visiting.add(RecipeCompat.id(holder));
         boolean success = true;
         for (Ingredient ingredient : ingredients) {
             // 先尝试使用已有材料；这能让树里清楚区分“已有”和“缺失”的节点。
@@ -423,13 +425,13 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             ingredientPath.push(ingredient);
             try {
                 for (RecipeHolder<?> candidate : context.findNestedCraftingCandidates(player, ingredient)) {
-                    if (visiting.contains(candidate.id())) {
+                    if (visiting.contains(RecipeCompat.id(candidate))) {
                         continue;
                     }
 
                     MaterialPool candidatePool = pool.copy();
                     List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> candidateRows = new ArrayList<>();
-                    ItemStack candidateResult = candidate.value().getResultItem(player.registryAccess()).copy();
+                    ItemStack candidateResult = RecipeCompat.result(candidate.value(), player.registryAccess()).copy();
                     if (!candidateResult.isEmpty()) {
                         candidateRows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(candidateResult, false, depth));
                     }
@@ -463,10 +465,10 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             }
             success = false;
         }
-        visiting.remove(holder.id());
+        visiting.remove(RecipeCompat.id(holder));
 
         if (success) {
-            ItemStack result = recipe.getResultItem(player.registryAccess()).copy();
+            ItemStack result = RecipeCompat.result(recipe, player.registryAccess()).copy();
             pool.add(result);
         }
         return success;
@@ -595,13 +597,13 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         ingredientPath.pushStack(target, false);
         try {
             for (RecipeHolder<?> candidate : context.findNestedCraftingCandidates(player, target, false)) {
-                if (visiting.contains(candidate.id())) {
+                if (visiting.contains(RecipeCompat.id(candidate))) {
                     continue;
                 }
 
                 MaterialPool candidatePool = pool.copy();
                 List<NestedCraftingMissingMaterialsPacket.MissingMaterialRow> candidateRows = new ArrayList<>();
-                ItemStack candidateResult = candidate.value().getResultItem(player.registryAccess()).copy();
+                ItemStack candidateResult = RecipeCompat.result(candidate.value(), player.registryAccess()).copy();
                 if (!candidateResult.isEmpty()) {
                     candidateRows.add(new NestedCraftingMissingMaterialsPacket.MissingMaterialRow(candidateResult, false, depth));
                 }
@@ -670,7 +672,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
      * 从材料条件中选取一个代表物品用于缺失提示。
      */
     private static ItemStack getIngredientDisplayStack(Ingredient ingredient) {
-        ItemStack[] options = ingredient.getItems();
+        ItemStack[] options = RecipeCompat.items(ingredient);
         return options.length > 0 ? options[0].copyWithCount(1) : ItemStack.EMPTY;
     }
 
@@ -687,7 +689,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
     ) {
         Recipe<?> recipe = holder.value();
         if (!RecipeSupport.isUnlockedFor(player, recipe)
-                || visiting.contains(holder.id())
+                || visiting.contains(RecipeCompat.id(holder))
                 || depth > MAX_NESTED_SEARCH_DEPTH
                 || !context.tryUseStep()) {
             return false;
@@ -696,10 +698,10 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         List<Ingredient> ingredients = RecipeSupport.getNonEmptyIngredients(recipe);
         if (ingredients.isEmpty()) return false;
 
-        ItemStack result = recipe.getResultItem(player.registryAccess()).copy();
+        ItemStack result = RecipeCompat.result(recipe, player.registryAccess()).copy();
         if (result.isEmpty()) return false;
 
-        visiting.add(holder.id());
+        visiting.add(RecipeCompat.id(holder));
         boolean success = true;
         for (Ingredient ingredient : ingredients) {
             if (!satisfyIngredient(player, ingredient, pool, plan, missing, visiting, ingredientPath, depth, context)) {
@@ -707,11 +709,11 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
                 break;
             }
         }
-        visiting.remove(holder.id());
+        visiting.remove(RecipeCompat.id(holder));
 
         if (!success) return false;
 
-        plan.add(holder.id());
+        plan.add(RecipeCompat.id(holder));
         pool.add(result);
         return true;
     }
@@ -740,7 +742,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         ingredientPath.push(ingredient);
         try {
             for (RecipeHolder<?> candidate : context.findNestedCraftingCandidates(player, ingredient)) {
-                if (visiting.contains(candidate.id())) {
+                if (visiting.contains(RecipeCompat.id(candidate))) {
                     continue;
                 }
 
@@ -854,7 +856,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         ingredientPath.pushStack(target, false);
         try {
             for (RecipeHolder<?> candidate : context.findNestedCraftingCandidates(player, target, false)) {
-                if (visiting.contains(candidate.id())) {
+                if (visiting.contains(RecipeCompat.id(candidate))) {
                     continue;
                 }
 
@@ -902,13 +904,13 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
                 continue;
             }
 
-            ItemStack result = recipe.getResultItem(server.registryAccess());
+            ItemStack result = RecipeCompat.result(recipe, server.registryAccess());
             if (!result.isEmpty() && targetIngredient.test(result)) {
                 candidates.add(holder);
             }
         }
 
-        candidates.sort(Comparator.comparing(holder -> holder.id().toString()));
+        candidates.sort(Comparator.comparing(holder -> RecipeCompat.id(holder).toString()));
         if (candidates.size() > MAX_NESTED_CANDIDATES_PER_INGREDIENT) {
             return new ArrayList<>(candidates.subList(0, MAX_NESTED_CANDIDATES_PER_INGREDIENT));
         }
@@ -930,7 +932,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
                 continue;
             }
 
-            ItemStack result = recipe.getResultItem(server.registryAccess());
+            ItemStack result = RecipeCompat.result(recipe, server.registryAccess());
             boolean matches = exactMatch
                     ? ItemStack.isSameItemSameComponents(result, targetStack)
                     : result.is(targetStack.getItem());
@@ -939,7 +941,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             }
         }
 
-        candidates.sort(Comparator.comparing(holder -> holder.id().toString()));
+        candidates.sort(Comparator.comparing(holder -> RecipeCompat.id(holder).toString()));
         if (candidates.size() > MAX_NESTED_CANDIDATES_PER_INGREDIENT) {
             return new ArrayList<>(candidates.subList(0, MAX_NESTED_CANDIDATES_PER_INGREDIENT));
         }
@@ -958,9 +960,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         List<Item> ingredients = BuiltInRegistries.ITEM.stream()
                 .filter(item -> potionBrewing.isIngredient(new ItemStack(item)))
                 .toList();
-        List<Holder.Reference<Potion>> potions = player.registryAccess()
-                .registryOrThrow(Registries.POTION)
-                .holders()
+        List<Holder.Reference<Potion>> potions = RecipeCompat.potions(player.registryAccess())
                 .filter(potionBrewing::isBrewablePotion)
                 .toList();
 
@@ -1042,7 +1042,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         if (!RecipeSupport.isUnlockedFor(player, recipe)) return null;
 
         if (recipe instanceof CraftingRecipe craftingRecipe) {
-            ItemStack result = craftingRecipe.getResultItem(server.registryAccess()).copy();
+            ItemStack result = RecipeCompat.result(craftingRecipe, server.registryAccess()).copy();
             List<Ingredient> ingredients = RecipeSupport.getNonEmptyIngredients(craftingRecipe);
             List<IngredientUse> matchedIngredients = matchIngredients(player, ingredients);
             if (matchedIngredients.isEmpty()) return null;
@@ -1078,7 +1078,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         }
 
         if (RecipeSupport.isConfiguredSimpleRecipeFor(player, recipe, server.registryAccess())) {
-            ItemStack result = recipe.getResultItem(server.registryAccess()).copy();
+            ItemStack result = RecipeCompat.result(recipe, server.registryAccess()).copy();
             List<IngredientUse> matchedIngredients = matchIngredients(player, RecipeSupport.getNonEmptyIngredients(recipe));
             if (matchedIngredients.isEmpty()) return null;
             return result.isEmpty() ? null : CraftingResult.single(result, matchedIngredients);
@@ -1271,13 +1271,13 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
     private static SmithingMatch findSmithingMatch(ServerPlayer player, SmithingRecipe recipe) {
         List<AvailableMaterial> available = getAvailableMaterials(player);
 
-        IngredientUse template = takeFirstMatching(available, recipe::isTemplateIngredient);
+        IngredientUse template = takeFirstMatching(available, stack -> RecipeCompat.isTemplateIngredient(recipe, stack));
         if (template == null) return null;
 
-        IngredientUse base = takeFirstMatching(available, recipe::isBaseIngredient);
+        IngredientUse base = takeFirstMatching(available, stack -> RecipeCompat.isBaseIngredient(recipe, stack));
         if (base == null) return null;
 
-        IngredientUse addition = takeFirstMatching(available, recipe::isAdditionIngredient);
+        IngredientUse addition = takeFirstMatching(available, stack -> RecipeCompat.isAdditionIngredient(recipe, stack));
         if (addition == null) return null;
 
         return new SmithingMatch(template, base, addition);
@@ -1481,7 +1481,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         private final Map<String, ItemStack> missing = new LinkedHashMap<>();
 
         private void addIngredient(Ingredient ingredient) {
-            ItemStack[] options = ingredient.getItems();
+            ItemStack[] options = RecipeCompat.items(ingredient);
             if (options.length > 0) {
                 addStack(options[0].copyWithCount(1));
             }
@@ -1522,7 +1522,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         private final Map<String, Integer> itemDepthCounts = new HashMap<>();
 
         private boolean contains(Ingredient ingredient) {
-            for (ItemStack option : ingredient.getItems()) {
+            for (ItemStack option : RecipeCompat.items(ingredient)) {
                 if (itemDepthCounts.containsKey(stackItemKey(option))) {
                     return true;
                 }
@@ -1535,7 +1535,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         }
 
         private void push(Ingredient ingredient) {
-            for (ItemStack option : ingredient.getItems()) {
+            for (ItemStack option : RecipeCompat.items(ingredient)) {
                 itemDepthCounts.merge(stackItemKey(option), 1, Integer::sum);
             }
         }
@@ -1545,7 +1545,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         }
 
         private void pop(Ingredient ingredient) {
-            for (ItemStack option : ingredient.getItems()) {
+            for (ItemStack option : RecipeCompat.items(ingredient)) {
                 String key = stackItemKey(option);
                 Integer count = itemDepthCounts.get(key);
                 if (count == null) {
@@ -1605,7 +1605,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         }
 
         private static String buildIngredientKey(Ingredient ingredient) {
-            ItemStack[] options = ingredient.getItems();
+            ItemStack[] options = RecipeCompat.items(ingredient);
             if (options.length == 0) {
                 return "<empty>";
             }
@@ -1676,11 +1676,9 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             List<ItemStack> allResults = new ArrayList<>(results);
             for (IngredientUse ingredient : ingredients) {
                 ItemStack consumed = ingredient.stack();
-                if (consumed.hasCraftingRemainingItem()) {
-                    ItemStack remainder = consumed.getCraftingRemainingItem();
-                    if (!remainder.isEmpty()) {
-                        allResults.add(remainder.copy());
-                    }
+                ItemStack remainder = ItemCompat.craftingRemainder(consumed);
+                if (!remainder.isEmpty()) {
+                    allResults.add(remainder.copy());
                 }
             }
             return new CraftingResult(List.copyOf(allResults), ingredients);

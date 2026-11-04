@@ -5,6 +5,10 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        minecraft: ['1.21.1', '1.21.4']
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,4 +31,11 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build with Gradle
-        run: ./gradlew build
+        run: ./gradlew :${{ matrix.minecraft }}:buildAndCollect
+
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: convenientcrafting-mc${{ matrix.minecraft }}
+          path: build/libs/*.jar
+          if-no-files-found: error

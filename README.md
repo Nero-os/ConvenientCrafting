@@ -2,8 +2,8 @@
 
 <div align="center">
 
-![Minecraft Version](https://img.shields.io/badge/Minecraft-1.21.1-brightgreen)
-![NeoForge](https://img.shields.io/badge/NeoForge-21.1.x-orange)
+![Minecraft Version](https://img.shields.io/badge/Minecraft-1.21.1%20%7C%201.21.4-brightgreen)
+![NeoForge](https://img.shields.io/badge/NeoForge-21.1.x%20%7C%2021.4.x-orange)
 ![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-red)
 
 **一个轻量生存工作流 QoL 模组：随身合成、配方检索、嵌套合成、材料来源整合与轻量整理**
@@ -14,7 +14,7 @@
 
 ## 📖 简介
 
-便捷合成 (Convenient Crafting) 是一个面向 Minecraft 1.21.1 与 NeoForge 21.1.220+ 的轻量生存工作流 QoL 模组。它的核心不是增加大量新物品，而是让玩家在冒险、建造、挖矿和整理材料时少打断当前节奏：随时打开合成助手，检索配方，直接使用背包、已打开容器和可选分类袋中的材料完成合成。
+便捷合成 (Convenient Crafting) 是一个面向 Minecraft 1.21.1 / 1.21.4 与对应 NeoForge 版本 的轻量生存工作流 QoL 模组。它的核心不是增加大量新物品，而是让玩家在冒险、建造、挖矿和整理材料时少打断当前节奏：随时打开合成助手，检索配方，直接使用背包、已打开容器和可选分类袋中的材料完成合成。
 
 模组的主玩法是**随身合成助手**：配方检索、可合成判断、批量合成、嵌套合成和材料来源整合都围绕它展开。背包/容器整理和分类袋则属于材料准备层，帮助你更快把材料整理到可以使用的状态。
 
@@ -76,11 +76,11 @@
 ## 🎮 使用指南
 
 ### 安装要求
-- **Minecraft**: 1.21.1
-- **Mod Loader**: NeoForge 21.1.x
+- **Minecraft**: 1.21.1 或 1.21.4（下载对应版本的 JAR）
+- **Mod Loader**: 1.21.1 使用 NeoForge 21.1.x；1.21.4 使用 NeoForge 21.4.161+（21.4.x）
 - **Java**: Java 21+
 
-多版本维护和移植检查清单见 [`VERSIONING.md`](VERSIONING.md)。当前发布包只声明支持已测试的 Minecraft 1.21.1。
+多版本维护和移植检查清单见 [`VERSIONING.md`](VERSIONING.md)。工程使用 Stonecutter 共享源码，每个构建包只声明支持自己的 Minecraft 目标版本。
 
 ### 安装步骤
 1. 确保已安装对应版本的 NeoForge
@@ -144,9 +144,20 @@
 ## 👨‍💻 开发信息
 
 - **软件名称**: 便捷合成 (Convenient Crafting)
-- **软件版本**: V1.6.0
+- **软件版本**: V1.6.1
 - **模组 ID**: `convenientcrafting`
-- **开发环境**: Java 21 / NeoForge Gradle
-- **映射版本**: Parchment MC 1.21.1 / 2024.11.17
+- **开发环境**: Java 21 / Stonecutter / ModDevGradle
+- **映射版本**: 按 Minecraft 目标配置，见 `versions/<版本>/gradle.properties`
 
 ### 构建项目
+
+```powershell
+# 构建两个版本，JAR 汇总到 build/libs/
+.\gradlew.bat buildAll
+
+# 启动指定版本客户端
+.\gradlew.bat :1.21.1:runClient
+.\gradlew.bat :1.21.4:runClient
+```
+
+完整的版本切换、目录说明和验证清单见 [VERSIONING.md](VERSIONING.md)。

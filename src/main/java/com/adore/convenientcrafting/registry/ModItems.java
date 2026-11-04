@@ -33,23 +33,27 @@ public final class ModItems {
 
     public static final DeferredItem<Item> SEED_BAG = ITEMS.register(
             "seed_bag",
-            () -> new CategorizedBagItem(bagProperties(), SEEDS));
+            id -> new CategorizedBagItem(bagProperties(id), SEEDS));
 
     public static final DeferredItem<Item> DYE_BAG = ITEMS.register(
             "dye_bag",
-            () -> new CategorizedBagItem(bagProperties(), Tags.Items.DYES));
+            id -> new CategorizedBagItem(bagProperties(id), Tags.Items.DYES));
 
     public static final DeferredItem<Item> MINERAL_BAG = ITEMS.register(
             "mineral_bag",
-            () -> new CategorizedBagItem(bagProperties(), MINERALS));
+            id -> new CategorizedBagItem(bagProperties(id), MINERALS));
 
     private ModItems() {
     }
 
-    private static Item.Properties bagProperties() {
-        return new Item.Properties()
+    private static Item.Properties bagProperties(ResourceLocation id) {
+        Item.Properties properties = new Item.Properties()
+                //? if >=1.21.4 {
+                /*.setId(net.minecraft.resources.ResourceKey.create(Registries.ITEM, id))
+                *///?}
                 .stacksTo(1)
                 .component(DataComponents.CONTAINER, ItemContainerContents.EMPTY);
+        return properties;
     }
 
     /**

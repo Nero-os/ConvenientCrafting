@@ -1,0 +1,21 @@
+plugins {
+    id 'base'
+    id 'dev.kikugie.stonecutter'
+    id 'net.neoforged.moddev' version '2.0.140' apply false
+}
+
+stonecutter.active '1.21.1'
+
+tasks.register('buildAll') {
+    group = 'build'
+    description = 'Builds and collects the mods for every supported Minecraft version.'
+    dependsOn ':1.21.1:buildAndCollect', ':1.21.4:buildAndCollect'
+}
+
+tasks.named('build') {
+    dependsOn 'buildAll'
+}
+
+tasks.named('clean') {
+    dependsOn ':1.21.1:clean', ':1.21.4:clean'
+}

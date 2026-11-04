@@ -313,7 +313,7 @@ public final class RecipeUnlocks {
                         .withStyle(ChatFormatting.YELLOW))
                 .append(Component.literal(" 后，可在便捷合成面板中使用对应配方。")
                         .withStyle(ChatFormatting.GRAY));
-        player.sendSystemMessage(message);
+        player.displayClientMessage(message, false);
     }
 
     private static String getRecipeTypeDisplayName(ResourceLocation recipeTypeId) {
