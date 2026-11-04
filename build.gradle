@@ -108,7 +108,7 @@ neoForge {
         }
 
         data {
-            if (minecraft_version == '1.21.1') {
+            if (minecraft_version != '1.21.4') {
                 data()
             } else {
                 clientData()

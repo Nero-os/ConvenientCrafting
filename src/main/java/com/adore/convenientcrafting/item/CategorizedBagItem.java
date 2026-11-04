@@ -214,7 +214,7 @@ public class CategorizedBagItem extends Item {
     /**
      * 禁止收纳袋被放入其他容器物品，避免袋子套袋子造成复杂嵌套。
      */
-    //? if <1.21.4 {
+    //? if <1.21.2 {
     @Override
     public boolean canFitInsideContainerItems(ItemStack stack) {
         return false;

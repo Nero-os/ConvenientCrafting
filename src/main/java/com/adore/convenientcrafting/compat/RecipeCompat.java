@@ -17,7 +17,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.item.crafting.SmithingRecipe;
 
-//? if >=1.21.4 {
+//? if >=1.21.2 {
 /*import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.context.ContextMap;
 import net.minecraft.world.item.crafting.display.SlotDisplayContext;
@@ -30,13 +30,15 @@ public final class RecipeCompat {
     public static ItemStack[] items(Ingredient ingredient) {
         //? if >=1.21.4 {
         /*return ingredient.items().map(holder -> new ItemStack(holder)).toArray(ItemStack[]::new);
+        *///?} elif >=1.21.2 {
+        /*return ingredient.items().stream().map(ItemStack::new).toArray(ItemStack[]::new);
         *///?} else {
         return ingredient.getItems();
         //?}
     }
 
     public static List<Ingredient> ingredients(Recipe<?> recipe) {
-        //? if >=1.21.4 {
+        //? if >=1.21.2 {
         /*return recipe.placementInfo().ingredients();
         *///?} else {
         return recipe.getIngredients();
@@ -44,7 +46,7 @@ public final class RecipeCompat {
     }
 
     public static ItemStack result(Recipe<?> recipe, HolderLookup.Provider registries) {
-        //? if >=1.21.4 {
+        //? if >=1.21.2 {
         /*ContextMap context = new ContextMap.Builder().withParameter(SlotDisplayContext.REGISTRIES, registries).create(SlotDisplayContext.CONTEXT);
         return recipe.display().stream()
                 .flatMap(display -> display.result().resolveForStacks(context).stream())
@@ -55,7 +57,7 @@ public final class RecipeCompat {
     }
 
     public static ResourceLocation id(RecipeHolder<?> holder) {
-        //? if >=1.21.4 {
+        //? if >=1.21.2 {
         /*return holder.id().location();
         *///?} else {
         return holder.id();
@@ -63,7 +65,7 @@ public final class RecipeCompat {
     }
 
     public static Optional<RecipeHolder<?>> byId(RecipeManager manager, ResourceLocation id) {
-        //? if >=1.21.4 {
+        //? if >=1.21.2 {
         /*return manager.byKey(ResourceKey.create(Registries.RECIPE, id));
         *///?} else {
         return manager.byKey(id);
@@ -71,7 +73,7 @@ public final class RecipeCompat {
     }
 
     public static boolean isTemplateIngredient(SmithingRecipe recipe, ItemStack stack) {
-        //? if >=1.21.4 {
+        //? if >=1.21.2 {
         /*return Ingredient.testOptionalIngredient(recipe.templateIngredient(), stack);
         *///?} else {
         return recipe.isTemplateIngredient(stack);
@@ -79,7 +81,7 @@ public final class RecipeCompat {
     }
 
     public static boolean isBaseIngredient(SmithingRecipe recipe, ItemStack stack) {
-        //? if >=1.21.4 {
+        //? if >=1.21.2 {
         /*return Ingredient.testOptionalIngredient(recipe.baseIngredient(), stack);
         *///?} else {
         return recipe.isBaseIngredient(stack);
@@ -87,7 +89,7 @@ public final class RecipeCompat {
     }
 
     public static boolean isAdditionIngredient(SmithingRecipe recipe, ItemStack stack) {
-        //? if >=1.21.4 {
+        //? if >=1.21.2 {
         /*return Ingredient.testOptionalIngredient(recipe.additionIngredient(), stack);
         *///?} else {
         return recipe.isAdditionIngredient(stack);
@@ -95,7 +97,7 @@ public final class RecipeCompat {
     }
 
     public static Stream<Holder.Reference<Potion>> potions(RegistryAccess registries) {
-        //? if >=1.21.4 {
+        //? if >=1.21.2 {
         /*return registries.lookupOrThrow(Registries.POTION).listElements();
         *///?} else {
         return registries.registryOrThrow(Registries.POTION).holders();

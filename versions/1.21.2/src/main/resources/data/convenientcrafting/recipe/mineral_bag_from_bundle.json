@@ -1,0 +1,22 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "convenientcrafting:category_bags_enabled"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "#": "#convenientcrafting:minerals",
+    "B": "minecraft:bundle",
+    "L": "minecraft:leather"
+  },
+  "pattern": [
+    " B ",
+    "L#L"
+  ],
+  "result": {
+    "count": 1,
+    "id": "convenientcrafting:mineral_bag"
+  }
+}

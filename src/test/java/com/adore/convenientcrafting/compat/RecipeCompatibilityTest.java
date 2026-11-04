@@ -70,6 +70,26 @@ class RecipeCompatibilityTest {
         assertFalse(item.accepts(new ItemStack(Items.DIAMOND)));
     }
 
+    @Test
+    void workstationInputsAndOutputsSurviveThePort(MinecraftServer server) {
+        var stonecutting = recipe(server, "minecraft:stone_slab_from_stone_stonecutting").value();
+        ItemStack slabs = RecipeCompat.result(stonecutting, server.registryAccess());
+        assertTrue(slabs.is(Items.STONE_SLAB));
+        assertEquals(2, slabs.getCount());
+        assertEquals(1, RecipeSupport.getNonEmptyIngredients(stonecutting).size());
+
+        var smithing = (net.minecraft.world.item.crafting.SmithingRecipe)
+                recipe(server, "minecraft:netherite_sword_smithing").value();
+        assertTrue(RecipeCompat.isTemplateIngredient(smithing, new ItemStack(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE)));
+        assertTrue(RecipeCompat.isBaseIngredient(smithing, new ItemStack(Items.DIAMOND_SWORD)));
+        assertTrue(RecipeCompat.isAdditionIngredient(smithing, new ItemStack(Items.NETHERITE_INGOT)));
+        assertFalse(RecipeCompat.isAdditionIngredient(smithing, new ItemStack(Items.DIAMOND)));
+        ItemStack sword = smithing.assemble(new net.minecraft.world.item.crafting.SmithingRecipeInput(
+                new ItemStack(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE),
+                new ItemStack(Items.DIAMOND_SWORD), new ItemStack(Items.NETHERITE_INGOT)), server.registryAccess());
+        assertTrue(sword.is(Items.NETHERITE_SWORD));
+    }
+
     //? if >=1.21.4 {
     /*@Test
     void fullWorkstationRecipesAreRequestedForClientSync(MinecraftServer server) {

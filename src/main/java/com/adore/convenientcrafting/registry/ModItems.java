@@ -48,7 +48,7 @@ public final class ModItems {
 
     private static Item.Properties bagProperties(ResourceLocation id) {
         Item.Properties properties = new Item.Properties()
-                //? if >=1.21.4 {
+                //? if >=1.21.2 {
                 /*.setId(net.minecraft.resources.ResourceKey.create(Registries.ITEM, id))
                 *///?}
                 .stacksTo(1)

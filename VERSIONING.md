@@ -1,10 +1,11 @@
 # Multi-version development
 
-Convenient Crafting uses Stonecutter 0.9.8 to build Minecraft 1.21.1 and 1.21.4 from one source tree. Both targets require Java 21.
+Convenient Crafting uses Stonecutter 0.9.8 to build Minecraft 1.21.1, 1.21.2, and 1.21.4 from one source tree. All targets require Java 21.
 
 | Minecraft | NeoForge build dependency | Runtime range | Parchment |
 | --- | --- | --- | --- |
 | 1.21.1 | 21.1.220 | [21.1.0,21.2.0) | 1.21.1 / 2024.11.17 |
+| 1.21.2 | 21.2.1-beta | [21.2.1-beta,21.3.0) | 1.21.3 / 2024.12.07 |
 | 1.21.4 | 21.4.161 | [21.4.161,21.5.0) | 1.21.4 / 2025.03.23 |
 
 Each jar declares its exact Minecraft target. Do not broaden the range without testing every included version.
@@ -28,13 +29,15 @@ Edit shared sources under `src/`, not the generated files under `versions/*/buil
 Windows commands (use `./gradlew` on Linux/macOS):
 
 ```powershell
-# Compile, check, and collect both release jars in build/libs/.
+# Compile, check, and collect all three release jars in build/libs/.
 .\gradlew.bat buildAll
 
 # Build or run one target explicitly; these do not switch the shared source tree.
 .\gradlew.bat :1.21.1:build
+.\gradlew.bat :1.21.2:build
 .\gradlew.bat :1.21.4:build
 .\gradlew.bat :1.21.1:runClient
+.\gradlew.bat :1.21.2:runClient
 .\gradlew.bat :1.21.4:runClient
 .\gradlew.bat :1.21.4:runServer
 
@@ -47,18 +50,20 @@ Windows commands (use `./gradlew` on Linux/macOS):
 
 Run directories are isolated under `versions/<minecraft>/run/`. Do not copy worlds between versions just to test the mod. Minecraft artifact generation is serialized to avoid decompiling two versions concurrently.
 
-Release jars are named `convenientcrafting-<mod_version>-neoforge-mc<minecraft_version>.jar`. Keep both jars in the same release when appropriate, and tag each download only with its own Minecraft version. Updating the mod version does not require duplicating shared code or creating a branch per Minecraft version.
+Release jars are named `convenientcrafting-<mod_version>-neoforge-mc<minecraft_version>.jar`. Keep the target jars in the same release when appropriate, and tag each download only with its own Minecraft version. Updating the mod version does not require duplicating shared code or creating a branch per Minecraft version.
 
-## 1.21.4 adaptations
+## Version adaptations
 
-- Recipe identifiers use resource keys; ingredients and result previews use the new placement/display APIs.
-- NeoForge's `OnDatapackSyncEvent.sendRecipes` synchronizes built-in and configured recipe types on login and datapack reload. `RecipesReceivedEvent` replaces the client snapshot and invalidates recipe indexes, including same-size reloads.
+- From 1.21.2, recipe identifiers use resource keys; ingredients and result previews use the new placement/display APIs.
+- On 1.21.4, NeoForge's `OnDatapackSyncEvent.sendRecipes` synchronizes built-in and configured recipe types on login and datapack reload. `RecipesReceivedEvent` replaces the client snapshot and invalidates recipe indexes, including same-size reloads.
+- On 1.21.2, a target-local `recipe_catalog` payload sends the encoded catalogue in byte chunks of at most 64 KiB. Recipes are decoded only after vanilla tag sync, so newly introduced item tags exist before ingredient decoding. The client publishes a complete catalogue at once, invalidating same-size reloads and clearing unfinished data on logout. The old branch's 32,768-recipe catalogue limit is removed.
+- The 1.21.2 target retains NeoForge 21.2.1-beta and the original port's Parchment 1.21.3 / 2024.12.07 parameter mappings. Its old single-target build and unlock-packet wire format are superseded by the shared build and separate catalogue payload; `codex/mc-1.21.2` remains a historical reference.
 - Craft execution stays on the server and resolves the original server recipe by id; client data never supplies an authoritative result.
-- Configured custom simple recipe types on 1.21.4 must expose usable placement ingredients and result displays through the new recipe APIs.
+- Configured custom simple recipe types on 1.21.2 and later must expose usable placement ingredients and result displays through the new recipe APIs.
 - Classification bags set their item registry keys before construction.
-- Version-specific recipe JSON uses the 1.21.4 ingredient format.
-- Version-specific item definitions select empty/filled bag models using the container component, replacing legacy item predicates.
-- Data generation uses `clientData` for 1.21.4 and `data` for 1.21.1.
+- Version-specific recipe JSON uses the modern ingredient format on 1.21.2 and later.
+- On 1.21.4, version-specific item definitions select empty/filled bag models using the container component. The 1.21.1 and 1.21.2 targets retain legacy item predicates.
+- Data generation uses `clientData` for 1.21.4 and `data` for 1.21.1/1.21.2.
 
 ## Adding another target
 
@@ -78,4 +83,6 @@ Successful compilation alone does not establish compatibility with every modpack
 
 ## Automated checks
 
-`build` and `buildAll` run NeoForge JUnit tests against real loaded server datapacks for both targets. These check repeated shaped ingredients, shapeless output counts and tags, bag registration and conditional recipes, crafting remainders, and bag nesting/storage. The 1.21.4 target additionally checks that full workstation recipes are requested for client synchronization. Run a single target with `.\gradlew.bat :1.21.4:test`.
+`build` and `buildAll` run NeoForge JUnit tests against real loaded server datapacks for all three targets. These check repeated shaped ingredients, shapeless output counts and tags, bag registration and conditional recipes, crafting remainders, and bag nesting/storage. The 1.21.4 target additionally checks that full workstation recipes are requested for client synchronization. Run a single target with `.\gradlew.bat :1.21.4:test`.
+
+The 1.21.2 target also tests full-recipe codec round-tripping without premature registry/tag access, component-sensitive custom ingredients, catalogues over 32,768 entries, publication after tag updates, same-size/empty reloads, and incomplete/disconnected transfers. Shared tests exercise stonecutting outputs and smithing input matching/assembly on every target.

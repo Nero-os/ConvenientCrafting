@@ -157,7 +157,17 @@ public class ConvenientCraftingClient {
         CraftHelperScreen.clearRecipeIndexCache();
         CraftHelperScreen.preloadRecipeIndex();
     }
-    *///?} else {
+    *///?} elif >=1.21.2 {
+    /*@SubscribeEvent
+    static void onRecipeTagsUpdated(net.neoforged.neoforge.event.TagsUpdatedEvent event) {
+        var connection = Minecraft.getInstance().getConnection();
+        if (connection != null && event.getUpdateCause() == net.neoforged.neoforge.event.TagsUpdatedEvent.UpdateCause.CLIENT_PACKET_RECEIVED
+                && LegacyRecipeCatalog.publishAfterTags(connection.registryAccess())) {
+            CraftHelperScreen.clearRecipeIndexCache();
+            CraftHelperScreen.preloadRecipeIndex();
+        }
+    }
+    *///?} elif <1.21.2 {
     @SubscribeEvent
     static void onRecipesUpdated(net.neoforged.neoforge.client.event.RecipesUpdatedEvent event) {
         ClientRecipes.replace(event.getRecipeManager(), event.getRecipeManager().getRecipes());

@@ -18,7 +18,7 @@ public final class ClientRecipes {
     }
 
     public static ClientRecipes get() {
-        //? if <1.21.4 {
+        //? if <1.21.2 {
         var level = Minecraft.getInstance().level;
         if (level != null && snapshot.source != level.getRecipeManager()) {
             snapshot = new ClientRecipes(level.getRecipeManager(), level.getRecipeManager().getRecipes());
@@ -36,6 +36,9 @@ public final class ClientRecipes {
     }
 
     public static void clear() {
+        //? if >=1.21.2 && <1.21.4 {
+        /*LegacyRecipeCatalog.reset();
+        *///?}
         snapshot = new ClientRecipes(null, List.of());
     }
 }

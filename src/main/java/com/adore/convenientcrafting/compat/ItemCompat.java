@@ -2,12 +2,12 @@ package com.adore.convenientcrafting.compat;
 
 import net.minecraft.world.item.ItemStack;
 
-/** Container and crafting remainder APIs changed names in 1.21.4. */
+/** Container and crafting remainder APIs changed names in 1.21.2. */
 public final class ItemCompat {
     private ItemCompat() {}
 
     public static boolean canFitInsideContainer(ItemStack stack) {
-        //? if >=1.21.4 {
+        //? if >=1.21.2 {
         /*return stack.getItem().canFitInsideContainerItems();
         *///?} else {
         return stack.canFitInsideContainerItems();
@@ -15,7 +15,7 @@ public final class ItemCompat {
     }
 
     public static ItemStack craftingRemainder(ItemStack stack) {
-        //? if >=1.21.4 {
+        //? if >=1.21.2 {
         /*return stack.getCraftingRemainder();
         *///?} else {
         return stack.hasCraftingRemainingItem() ? stack.getCraftingRemainingItem() : ItemStack.EMPTY;

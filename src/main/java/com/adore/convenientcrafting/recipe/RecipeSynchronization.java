@@ -14,6 +14,21 @@ public final class RecipeSynchronization {
                 .map(BuiltInRegistries.RECIPE_TYPE::getOptional)
                 .flatMap(java.util.Optional::stream)
                 .toList());
+        *///?} elif >=1.21.2 {
+        /*var players = event.getRelevantPlayers().toList();
+        if (players.isEmpty()) {
+            return;
+        }
+        var types = new java.util.HashSet<>(RecipeUnlocks.getUnlockableRecipeTypeIds());
+        var server = event.getPlayerList().getServer();
+        var recipes = server.getRecipeManager().getRecipes().stream()
+                .filter(holder -> types.contains(RecipeSupport.getRecipeTypeId(holder.value())))
+                .toList();
+        for (var batch : com.adore.convenientcrafting.network.LegacyRecipeSyncPacket.batches(recipes, server.registryAccess())) {
+            for (var player : players) {
+                net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player, batch);
+            }
+        }
         *///?}
     }
 }

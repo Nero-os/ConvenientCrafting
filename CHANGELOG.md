@@ -4,13 +4,15 @@
 
 ### Added
 
-- Added a Stonecutter multi-version build for Minecraft 1.21.1 and 1.21.4, with separate jars and isolated run directories.
+- Added a Stonecutter multi-version build for Minecraft 1.21.1, 1.21.2, and 1.21.4, with separate jars and isolated run directories.
+- Integrated the previous 1.21.2 port into the shared source tree, with target-specific recipe catalogue synchronization and modern ingredient resources.
 - Added 1.21.4 recipe API, client recipe synchronization, bag registration, crafting recipe, and item model adaptations.
 
 ### Changed
 
+- Minecraft 1.21.2 recipe catalogues now synchronize in batches and become visible only after tag updates; reloads and disconnects discard unfinished catalogue data.
 - Shared functionality is maintained in one source tree; target dependencies and resource overrides live under `versions/`.
-- CI builds both Minecraft targets; `buildAll` collects release jars in `build/libs/`.
+- CI builds all three Minecraft targets; `buildAll` collects release jars in `build/libs/`.
 - Client recipe snapshots invalidate their indexes when recipes are synchronized or reloaded.
 
 ## 1.6.1 - 2026-08-28

@@ -89,6 +89,13 @@ public class ConvenientCrafting {
             RecipeUnlockSyncPacket.STREAM_CODEC,
             RecipeUnlockSyncPacket::handleClient
         );
+        //? if >=1.21.2 && <1.21.4 {
+        /*registrar.playToClient(
+            com.adore.convenientcrafting.network.LegacyRecipeSyncPacket.TYPE,
+            com.adore.convenientcrafting.network.LegacyRecipeSyncPacket.STREAM_CODEC,
+            com.adore.convenientcrafting.network.LegacyRecipeSyncPacket::handleClient
+        );
+        *///?}
         registrar.playToClient(
             NestedCraftingMissingMaterialsPacket.TYPE,
             NestedCraftingMissingMaterialsPacket.STREAM_CODEC,
