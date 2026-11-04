@@ -68,16 +68,18 @@ base {
     archivesName = "${mod_id}-neoforge-mc${minecraft_version}"
 }
 
-// Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+// Each Minecraft target uses its required Java toolchain.
+java.toolchain.languageVersion = JavaLanguageVersion.of((findProperty('java_version') ?: '21') as int)
 
 neoForge {
     // Specify the version of NeoForge to use.
     version = project.neo_version
 
-    parchment {
-        mappingsVersion = project.parchment_mappings_version
-        minecraftVersion = project.parchment_minecraft_version
+    if (project.hasProperty('parchment_mappings_version')) {
+        parchment {
+            mappingsVersion = project.parchment_mappings_version
+            minecraftVersion = project.parchment_minecraft_version
+        }
     }
 
     // This line is optional. Access Transformers are automatically detected
@@ -108,7 +110,7 @@ neoForge {
         }
 
         data {
-            if (minecraft_version != '1.21.4') {
+            if (minecraft_version in ['1.21.1', '1.21.2']) {
                 data()
             } else {
                 clientData()

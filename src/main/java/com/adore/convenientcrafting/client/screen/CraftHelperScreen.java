@@ -54,7 +54,11 @@ import java.util.function.Predicate;
  * <p>界面会列出当前世界注册的工作台和锻造台配方，并支持搜索、仅显示可合成配方、
  * 按可合成状态和玩家已有产物数量排序，以及向服务端发送一键合成请求。</p>
  */
+//? if >=26.1 {
+/*public class CraftHelperScreen extends CompatScreen {
+*///?} else {
 public class CraftHelperScreen extends Screen {
+//?}
 
     private static final int DEFAULT_PANEL_WIDTH = 250;
     private static final int DEFAULT_PANEL_HEIGHT = 246;
@@ -1497,7 +1501,7 @@ public class CraftHelperScreen extends Screen {
             if (match == null || mc.level == null) return false;
 
             SmithingRecipeInput input = new SmithingRecipeInput(match.template(), match.base(), match.addition());
-            return smithingRecipe.matches(input, mc.level) && !smithingRecipe.assemble(input, mc.level.registryAccess()).isEmpty();
+            return smithingRecipe.matches(input, mc.level) && !RecipeCompat.assemble(smithingRecipe, input, mc.level.registryAccess()).isEmpty();
         }
 
         if (recipe instanceof StonecutterRecipe stonecutterRecipe) {
@@ -1505,7 +1509,7 @@ public class CraftHelperScreen extends Screen {
             if (inputStack.isEmpty() || mc.level == null) return false;
 
             SingleRecipeInput input = new SingleRecipeInput(inputStack);
-            return stonecutterRecipe.matches(input, mc.level) && !stonecutterRecipe.assemble(input, mc.level.registryAccess()).isEmpty();
+            return stonecutterRecipe.matches(input, mc.level) && !RecipeCompat.assemble(stonecutterRecipe, input, mc.level.registryAccess()).isEmpty();
         }
 
         return isConfiguredSimpleRecipeCraftable(recipe);
@@ -1680,7 +1684,7 @@ public class CraftHelperScreen extends Screen {
             SmithingMatch match = findSmithingMatch(smithingRecipe);
             if (match != null) {
                 SmithingRecipeInput input = new SmithingRecipeInput(match.template(), match.base(), match.addition());
-                ItemStack assembled = smithingRecipe.assemble(input, mc.level.registryAccess());
+                ItemStack assembled = RecipeCompat.assemble(smithingRecipe, input, mc.level.registryAccess());
                 if (!assembled.isEmpty()) {
                     return assembled;
                 }
@@ -1690,7 +1694,7 @@ public class CraftHelperScreen extends Screen {
         if (recipe instanceof StonecutterRecipe stonecutterRecipe) {
             ItemStack inputStack = findSingleInputMatch(stonecutterRecipe);
             if (!inputStack.isEmpty()) {
-                ItemStack assembled = stonecutterRecipe.assemble(new SingleRecipeInput(inputStack), mc.level.registryAccess());
+                ItemStack assembled = RecipeCompat.assemble(stonecutterRecipe, new SingleRecipeInput(inputStack), mc.level.registryAccess());
                 if (!assembled.isEmpty()) {
                     return assembled;
                 }
@@ -1952,17 +1956,17 @@ public class CraftHelperScreen extends Screen {
         guiGraphics.fill(panelX, panelY - PANEL_TOP_EXTRA, panelX + panelWidth, panelY + panelHeight, 0xC0101010);
         guiGraphics.fill(panelX, panelY - PANEL_TOP_EXTRA, panelX + panelWidth, panelY - PANEL_TOP_EXTRA + 2, 0xFF4444FF);
         guiGraphics.fill(panelX, panelY + panelHeight - 2, panelX + panelWidth, panelY + panelHeight, 0xFF4444FF);
-        guiGraphics.drawString(font, title, panelX + 8, panelY + 2, 0xFFFFFF, false);
+        guiGraphics.drawString(font, title, panelX + 8, panelY + 2, 0xFFFFFFFF, false);
 
         String summary = "可合成: " + filteredCraftableGroupCount + "/" + filteredRecipeCount;
-        guiGraphics.drawString(font, summary, panelX + panelWidth - font.width(summary) - 34, panelY + 2, 0x888888, false);
+        guiGraphics.drawString(font, summary, panelX + panelWidth - font.width(summary) - 34, panelY + 2, 0xFF888888, false);
 
         drawFilterControls(guiGraphics);
 
         int totalPages = getTotalPages();
         if (totalPages > 1) {
             String pageStr = (currentPage + 1) + "/" + totalPages;
-            guiGraphics.drawString(font, pageStr, panelX + panelWidth / 2 - font.width(pageStr) / 2, panelY + panelHeight - NAVIGATION_HEIGHT, 0xAAAAAA, false);
+            guiGraphics.drawString(font, pageStr, panelX + panelWidth / 2 - font.width(pageStr) / 2, panelY + panelHeight - NAVIGATION_HEIGHT, 0xFFAAAAAA, false);
         }
 
         int startIndex = 0;
@@ -2002,8 +2006,8 @@ public class CraftHelperScreen extends Screen {
             if (font.width(resultName) > resultNameWidth) {
                 resultName = font.ellipsize(FormattedText.of(resultName), resultNameWidth).getString();
             }
-            guiGraphics.drawString(font, resultName, panelX + NAME_X_OFFSET, recipeY + 4, canCraft ? 0xFFFFFF : 0x888888, false);
-            guiGraphics.drawString(font, "x" + result.getCount(), panelX + NAME_X_OFFSET, recipeY + 16, 0xAAAAAA, false);
+            guiGraphics.drawString(font, resultName, panelX + NAME_X_OFFSET, recipeY + 4, canCraft ? 0xFFFFFFFF : 0xFF888888, false);
+            guiGraphics.drawString(font, "x" + result.getCount(), panelX + NAME_X_OFFSET, recipeY + 16, 0xFFAAAAAA, false);
 
             DisplayIngredient[] ingredients = getIngredientStacks(entry);
             int ingX = panelX + ingredientXOffset;

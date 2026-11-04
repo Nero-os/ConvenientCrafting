@@ -1,0 +1,23 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "convenientcrafting:category_bags_enabled"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "#": "#convenientcrafting:seeds",
+    "L": "minecraft:leather",
+    "S": "minecraft:string"
+  },
+  "pattern": [
+    " S ",
+    "L#L",
+    " L "
+  ],
+  "result": {
+    "count": 1,
+    "id": "convenientcrafting:seed_bag"
+  }
+}

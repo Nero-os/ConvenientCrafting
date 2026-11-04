@@ -4,7 +4,7 @@
 
 ### Added
 
-- Added Minecraft 1.21.2 and 1.21.4 support alongside 1.21.1. Download the file matching your Minecraft version.
+- Added Minecraft 1.21.2, 1.21.4, and 26.1.2 support alongside 1.21.1. Download the file matching your Minecraft version.
 
 ### Changed
 

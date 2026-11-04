@@ -84,6 +84,15 @@ public final class RecipeCompat {
         return CraftingInput.of(width, height, slots);
     }
 
+    public static <T extends net.minecraft.world.item.crafting.RecipeInput> ItemStack assemble(
+            Recipe<T> recipe, T input, HolderLookup.Provider registries) {
+        //? if >=26.1 {
+        /*return recipe.assemble(input);
+        *///?} else {
+        return recipe.assemble(input, registries);
+        //?}
+    }
+
     public static ResourceLocation id(RecipeHolder<?> holder) {
         //? if >=1.21.2 {
         /*return holder.id().location();
@@ -109,7 +118,9 @@ public final class RecipeCompat {
     }
 
     public static boolean isBaseIngredient(SmithingRecipe recipe, ItemStack stack) {
-        //? if >=1.21.2 {
+        //? if >=26.1 {
+        /*return recipe.baseIngredient().test(stack);
+        *///?} elif >=1.21.2 {
         /*return Ingredient.testOptionalIngredient(recipe.baseIngredient(), stack);
         *///?} else {
         return recipe.isBaseIngredient(stack);

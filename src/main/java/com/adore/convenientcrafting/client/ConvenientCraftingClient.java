@@ -72,7 +72,11 @@ public class ConvenientCraftingClient {
             KeyModifier.NONE,
             InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_G,
+            //? if >=26.1 {
+            /*net.minecraft.client.KeyMapping.Category.register(ResourceLocation.fromNamespaceAndPath(ConvenientCrafting.MODID, "main"))
+            *///?} else {
             "key.categories.convenientcrafting"
+            //?}
         )
     );
 
@@ -204,7 +208,11 @@ public class ConvenientCraftingClient {
             return;
         }
 
+        //? if >=26.1 {
+        /*if (OPEN_CRAFT_HELPER_KEY.get().matches(event.getKeyEvent())) {
+        *///?} else {
         if (OPEN_CRAFT_HELPER_KEY.get().matches(event.getKeyCode(), event.getScanCode())) {
+        //?}
             Minecraft mc = Minecraft.getInstance();
             if (mc.player != null && mc.level != null) {
                 mc.setScreen(new CraftHelperScreen());

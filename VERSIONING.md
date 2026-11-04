@@ -1,12 +1,13 @@
 # 多版本开发
 
-Convenient Crafting 使用 Stonecutter 0.9.8，通过同一套源码构建 Minecraft 1.21.1、1.21.2 和 1.21.4。所有目标版本均需要 Java 21。
+Convenient Crafting 使用 Stonecutter 0.9.8，通过同一套源码构建 Minecraft 1.21.1、1.21.2、1.21.4 和 26.1.2。1.21.x 使用 Java 21，26.1.2 使用 Java 25；Gradle 会为各目标选择对应的 Java 工具链。
 
-| Minecraft | NeoForge 构建依赖 | NeoForge 运行时版本范围 | Parchment 映射 |
+| Minecraft | NeoForge 构建依赖 | NeoForge 运行时版本范围 | 映射 |
 | --- | --- | --- | --- |
 | 1.21.1 | 21.1.220 | [21.1.0,21.2.0) | 1.21.1 / 2024.11.17 |
 | 1.21.2 | 21.2.1-beta | [21.2.1-beta,21.3.0) | 1.21.3 / 2024.12.07 |
 | 1.21.4 | 21.4.161 | [21.4.161,21.5.0) | 1.21.4 / 2025.03.23 |
+| 26.1.2 | 26.1.2.126 | [26.1.2.126,26.1.3) | Mojang 原始源码名称，无需 Parchment |
 
 每个 JAR 只声明支持对应的 Minecraft 版本。未经逐一测试，不要扩大其兼容版本范围。
 
@@ -18,7 +19,7 @@ Convenient Crafting 使用 Stonecutter 0.9.8，通过同一套源码构建 Minec
 - `gradle.properties`：共享的模组标识及发布版本号。
 - `versions/<minecraft>/gradle.properties`：各版本的 Minecraft、NeoForge、加载器及映射依赖。
 - `src/main`：共享的 Java 源码、模板和资源。
-- `versions/<minecraft>/src/main`：各版本的专用资源，由 Stonecutter 合并并覆盖共享资源。
+- `versions/<minecraft>/src/main`：各版本的专用源码和资源。专用资源会覆盖共享资源；26.1.2 的 `CompatScreen` 在这里适配新版输入事件。
 - `compat/RecipeCompat.java`：通过 Stonecutter 版本条件适配配方 API 差异。
 - `client/ClientRecipes.java`：客户端配方快照，并在同步时使相关缓存失效。
 
@@ -29,17 +30,19 @@ Convenient Crafting 使用 Stonecutter 0.9.8，通过同一套源码构建 Minec
 以下为 Windows 命令；Linux/macOS 请使用 `./gradlew`：
 
 ```powershell
-# 编译、检查三个目标版本，并将发布 JAR 汇总到 build/libs/。
+# 编译、检查四个目标版本，并将发布 JAR 汇总到 build/libs/。
 .\gradlew.bat buildAll
 
 # 单独构建或运行指定版本；这些命令不会切换共享源码的激活版本。
 .\gradlew.bat :1.21.1:build
 .\gradlew.bat :1.21.2:build
 .\gradlew.bat :1.21.4:build
+.\gradlew.bat :26.1.2:build
 .\gradlew.bat :1.21.1:runClient
 .\gradlew.bat :1.21.2:runClient
 .\gradlew.bat :1.21.4:runClient
-.\gradlew.bat :1.21.4:runServer
+.\gradlew.bat :26.1.2:runClient
+.\gradlew.bat :26.1.2:runServer
 
 # 切换 IDE 中的源码激活版本；Stonecutter 会改写源码中的版本条件注释。
 .\gradlew.bat "Set active project to 1.21.4"
@@ -54,8 +57,12 @@ Convenient Crafting 使用 Stonecutter 0.9.8，通过同一套源码构建 Minec
 
 ## 版本适配说明
 
+- 26.1.2 使用 ModDevGradle 2.0.148、Java 25 和 NeoForge 26.1.2.126。首次构建需要可用的 Java 25；未安装时 Gradle 会尝试自动下载。IDEA 的 Gradle JVM 可以继续使用现有的 Java 21，目标版本的编译、测试和启动使用各自的工具链。
+- 26.1.2 的机械式 API 改名集中配置在 `stonecutter.gradle`，切换激活版本时可双向转换。共享源码仍以 1.21.1 为基准。
+- 26.1.2 适配了 `Identifier`、界面渲染状态提取和结构化输入事件、物品堆模板、配方产物生成、NBT 读取、权限检查及客户端网络发送。文字颜色显式指定透明度，避免新版界面不显示文字。
+
 - 从 1.21.2 开始，配方标识使用资源键；材料和产物预览使用新的配方摆放与显示 API。
-- 在 1.21.4 中，通过 NeoForge 的 `OnDatapackSyncEvent.sendRecipes` 在登录及数据包重载时同步内置和配置启用的配方类型。`RecipesReceivedEvent` 会替换客户端配方快照并使配方索引失效，即使重载前后的配方数量相同也会更新。
+- 在 1.21.4 和 26.1.2 中，通过 NeoForge 的 `OnDatapackSyncEvent.sendRecipes` 在登录及数据包重载时同步内置和配置启用的配方类型。`RecipesReceivedEvent` 会替换客户端配方快照并使配方索引失效，即使重载前后的配方数量相同也会更新。
 - 在 1.21.2 中，使用该版本专用的 `recipe_catalog` 网络消息，将编码后的配方目录拆成不超过 64 KiB 的字节块传输。配方会在原版标签同步完成后才解码，确保新增物品标签已可用。客户端会在接收完整后一次性应用配方目录；配方数量相同的重载也会刷新，退出服务器时会清理未完成的数据。旧分支中最多 32,768 条配方的限制已移除。
 - 1.21.2 保留 NeoForge 21.2.1-beta，以及原移植使用的 Parchment 1.21.3 / 2024.12.07 参数映射。原来的单版本构建和解锁消息格式已由共享构建及独立配方目录消息取代；旧分支 `codex/mc-1.21.2` 的移植内容已整合到共享工程。
 - 实际合成始终在服务端执行，并通过配方 ID 查找服务端的原始配方；客户端提供的数据不能决定最终产物。
@@ -63,7 +70,9 @@ Convenient Crafting 使用 Stonecutter 0.9.8，通过同一套源码构建 Minec
 - 分类袋在构造前设置物品注册键。
 - 1.21.2 及以上版本的专用配方 JSON 使用新版材料格式。
 - 在 1.21.4 中，使用该版本专用的物品定义，根据容器组件选择空袋或装有物品的袋子模型。1.21.1 和 1.21.2 仍使用旧版物品模型谓词。
-- 数据生成在 1.21.4 使用 `clientData`，在 1.21.1 和 1.21.2 使用 `data`。
+- 数据生成在 1.21.4 和 26.1.2 使用 `clientData`，在 1.21.1 和 1.21.2 使用 `data`。
+
+26.1 系列迁移要求参考 [NeoForge 官方迁移说明](https://neoforged.net/news/26.1release/)。
 
 ## 添加新的目标版本
 
@@ -83,11 +92,11 @@ Convenient Crafting 使用 Stonecutter 0.9.8，通过同一套源码构建 Minec
 
 ## 自动化检查
 
-各目标版本的 `build` 任务会运行对应的 NeoForge JUnit 测试，`buildAll` 则会运行三个版本的测试。测试使用实际加载的服务端数据包，检查有序配方中重复材料的数量、无序配方的产物数量和标签材料、分类袋注册与条件配方、合成剩余物，以及分类袋嵌套限制和存储行为。1.21.4 还会检查是否请求同步完整的工作站配方。单独运行某个版本的测试可使用 `.\gradlew.bat :1.21.4:test`。
+各目标版本的 `build` 任务会运行对应的 NeoForge JUnit 测试，`buildAll` 则会运行四个版本的测试。测试使用实际加载的服务端数据包，检查有序配方中重复材料的数量、无序配方的产物数量和标签材料、分类袋注册与条件配方、合成剩余物，以及分类袋嵌套限制和存储行为。1.21.4 和 26.1.2 还会检查是否请求同步完整的工作站配方。单独运行某个版本的测试可使用 `.\gradlew.bat :1.21.4:test`。
 
 1.21.2 还会测试完整配方的编码与解码，确保不会提前访问注册表或标签；同时覆盖依赖物品组件的自定义材料、超过 32,768 条配方的目录、标签更新后应用配方目录、数量相同或为空的配方重载，以及传输未完成或连接断开的情况。所有目标版本的共享测试都会检查切石产物，以及锻造材料匹配和产物生成。
 
-共享的 `CraftingRegressionTest` 覆盖 Alt 整理时背包和袋内物品的数量守恒（包括满背包及空间不足时的回退）、材料扣除的原子性、容器写入失败后的回滚、袋子与材料来源冲突、配方 `matches` 校验、动态 `assemble` 产物、自定义剩余物、有序配方中的空位、材料选项重叠时的匹配及堆叠数量限制、产物空间不足时拒绝合成，以及配方类型启用状态与解锁状态的独立检查。每个目标版本还会使用 300 组固定随机种子生成的用例，将材料匹配结果与穷举结果对照。测试同时覆盖普通合成和嵌套合成的规划过程。这些测试使用 NeoForge 数据包测试服务端及隔离的背包测试对象，不会启动客户端，也不能替代上述游戏内检查。
+共享的 `CraftingRegressionTest` 覆盖 Alt 整理时背包和袋内物品的数量守恒（包括满背包及空间不足时的回退）、材料扣除的原子性、容器写入失败后的回滚、袋子与材料来源冲突、配方 `matches` 校验、动态 `assemble` 产物、自定义剩余物、有序配方中的空位、材料选项重叠时的匹配及堆叠数量限制、产物空间不足时拒绝合成，以及配方类型启用状态与解锁状态的独立检查。每个目标版本还会使用 300 组固定随机种子生成的用例，将材料匹配结果与穷举结果对照。测试同时覆盖普通合成和嵌套合成的规划过程，以及已解锁配方类型的保存与读取。这些测试使用 NeoForge 数据包测试服务端及隔离的背包测试对象，不会启动客户端，也不能替代上述游戏内检查。
 
 ```powershell
 # 仅运行 1.21.1 基准版本的回归测试。

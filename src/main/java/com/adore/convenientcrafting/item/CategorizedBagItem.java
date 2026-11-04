@@ -204,8 +204,14 @@ public class CategorizedBagItem extends Item {
     }
 
     @Override
+    //? if >=26.1 {
+    /*public void appendHoverText(ItemStack stack, Item.TooltipContext context,
+            net.minecraft.world.item.component.TooltipDisplay display, java.util.function.Consumer<Component> tooltipComponents, TooltipFlag tooltipFlag) {
+        tooltipComponents.accept(Component.translatable(
+    *///?} else {
     public void appendHoverText(ItemStack stack, Item.TooltipContext context, List<Component> tooltipComponents, TooltipFlag tooltipFlag) {
         tooltipComponents.add(Component.translatable(
+    //?}
                 "item.convenientcrafting.bag.slots",
                 getUsedSlotCount(stack),
                 SLOT_COUNT).withStyle(ChatFormatting.GRAY));

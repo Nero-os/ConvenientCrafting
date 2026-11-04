@@ -1,14 +1,51 @@
 plugins {
     id 'dev.kikugie.stonecutter'
-    id 'net.neoforged.moddev' version '2.0.140' apply false
+    id 'net.neoforged.moddev' version '2.0.148' apply false
 }
 
 stonecutter.active '1.21.1'
 
+// Keep mechanical API renames reversible when switching the active IDE version.
+def modernApiNames = [
+        'ResourceLocation': 'Identifier',
+        'GuiGraphics': 'GuiGraphicsExtractor',
+        'net.minecraft.Util': 'net.minecraft.util.Util',
+        'ResourceKey::location': 'ResourceKey::identifier',
+        'void render(': 'void extractRenderState(',
+        'void renderWidget(': 'void extractContents(',
+        '.drawString(': '.text(',
+        '.renderItem(': '.item(',
+        '.renderItemDecorations(': '.itemDecorations(',
+        '.renderTooltip(': '.setTooltipForNextFrame(',
+        'Screen.hasControlDown()': 'com.adore.convenientcrafting.client.screen.CompatScreen.hasControlDown()',
+        'Screen.hasAltDown()': 'com.adore.convenientcrafting.client.screen.CompatScreen.hasAltDown()',
+        'Screen.hasShiftDown()': 'com.adore.convenientcrafting.client.screen.CompatScreen.hasShiftDown()',
+        'PacketDistributor.sendToServer': 'net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer',
+        'net.neoforged.neoforge.common.util.TriState': 'net.minecraft.util.TriState',
+        '.getTags()': '.typeHolder().tags()',
+        'player.getServer()': 'player.level().getServer()',
+        'source.hasPermission(2)': 'source.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)',
+        'Screen.isSelectAll(': 'com.adore.convenientcrafting.client.screen.CompatScreen.isSelectAll(',
+        'Screen.isCopy(': 'com.adore.convenientcrafting.client.screen.CompatScreen.isCopy(',
+        'Screen.isCut(': 'com.adore.convenientcrafting.client.screen.CompatScreen.isCut(',
+        'Screen.isPaste(': 'com.adore.convenientcrafting.client.screen.CompatScreen.isPaste(',
+        '.location()': '.identifier()',
+        '.getGuiLeft()': '.getLeftPos()',
+        '.getGuiTop()': '.getTopPos()'
+]
+stonecutter.parameters {
+    def modern = eval(current.version, '>=26.1')
+    replacements {
+        modernApiNames.each { from, to ->
+            string(modern) { replace(from, to) }
+        }
+    }
+}
+
 tasks.register('buildAll') {
     group = 'build'
     description = 'Builds and collects the mods for every supported Minecraft version.'
-    dependsOn ':1.21.1:buildAndCollect', ':1.21.2:buildAndCollect', ':1.21.4:buildAndCollect'
+    dependsOn ':1.21.1:buildAndCollect', ':1.21.2:buildAndCollect', ':1.21.4:buildAndCollect', ':26.1.2:buildAndCollect'
 }
 
 tasks.register('build') {
@@ -19,5 +56,5 @@ tasks.register('build') {
 tasks.register('clean', Delete) {
     group = 'build'
     delete layout.buildDirectory
-    dependsOn ':1.21.1:clean', ':1.21.2:clean', ':1.21.4:clean'
+    dependsOn ':1.21.1:clean', ':1.21.2:clean', ':1.21.4:clean', ':26.1.2:clean'
 }

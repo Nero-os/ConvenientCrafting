@@ -18,7 +18,11 @@ import java.util.List;
  * <p>弹窗使用手绘面板和手绘确认按钮，避免原生按钮控件与自绘窗口产生层级错乱。
  * 材料内容以默认全展开的树形列表展示，红色行代表真正缺少的原材料。</p>
  */
+//? if >=26.1 {
+/*public class MissingNestedCraftingMaterialsScreen extends CompatScreen {
+*///?} else {
 public class MissingNestedCraftingMaterialsScreen extends Screen {
+//?}
     private static final int PANEL_MAX_WIDTH = 380;
     private static final int PANEL_MIN_WIDTH = 240;
     private static final int PANEL_MAX_HEIGHT = 320;

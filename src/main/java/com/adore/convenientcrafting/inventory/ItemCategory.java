@@ -71,6 +71,12 @@ public enum ItemCategory {
      * @return 推断出的物品分类
      */
     public static ItemCategory categorizeItem(Item item) {
+        //? if >=26.1 {
+        /*ItemStack equipment = new ItemStack(item);
+        if (equipment.has(DataComponents.TOOL) || equipment.is(net.minecraft.tags.ItemTags.SWORDS)) return TOOLS;
+        if (item instanceof BowItem || item instanceof CrossbowItem || item instanceof ShieldItem
+                || equipment.has(DataComponents.EQUIPPABLE)) return COMBAT;
+        *///?} else {
         // 工具和战斗装备先判断，避免部分特殊物品后续被宽泛规则吞掉。
         if (item instanceof PickaxeItem ||
             item instanceof SwordItem ||
@@ -86,6 +92,8 @@ public enum ItemCategory {
             item instanceof ShieldItem) {
             return COMBAT;
         }
+
+        //?}
 
         // 食物使用 DataComponents.FOOD 判断，可兼容原版和模组添加的可食用物品。
         ItemStack tempStack = new ItemStack(item);

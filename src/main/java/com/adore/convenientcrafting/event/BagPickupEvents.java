@@ -73,18 +73,11 @@ public class BagPickupEvents {
      * @param pickedStack 正在拾取的物品堆，会被原地缩减
      */
     private static void insertIntoInventoryBags(Inventory inventory, ItemStack pickedStack) {
-        for (ItemStack inventoryStack : inventory.items) {
-            insertIntoBag(inventoryStack, pickedStack);
-            if (pickedStack.isEmpty()) {
-                return;
-            }
+        for (int slot = 0; slot < Inventory.INVENTORY_SIZE; slot++) {
+            insertIntoBag(inventory.getItem(slot), pickedStack);
+            if (pickedStack.isEmpty()) return;
         }
-        for (ItemStack inventoryStack : inventory.offhand) {
-            insertIntoBag(inventoryStack, pickedStack);
-            if (pickedStack.isEmpty()) {
-                return;
-            }
-        }
+        insertIntoBag(inventory.getItem(Inventory.SLOT_OFFHAND), pickedStack);
     }
 
     /**

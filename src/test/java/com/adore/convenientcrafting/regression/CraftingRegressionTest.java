@@ -107,7 +107,13 @@ class CraftingRegressionTest {
     void helperMustRespectCraftingRecipeMatches(MinecraftServer server) throws Exception {
         ServerPlayer player = inventoryOnlyPlayer(server);
         player.getInventory().setItem(0, new ItemStack(Items.OAK_PLANKS));
+        //? if >=26.1 {
+        /*ShapelessRecipe recipe = new ShapelessRecipe(new Recipe.CommonInfo(true),
+                new CraftingRecipe.CraftingBookInfo(CraftingBookCategory.MISC, ""),
+                net.minecraft.world.item.ItemStackTemplate.fromNonEmptyStack(new ItemStack(Items.DIAMOND)),
+        *///?} else {
         ShapelessRecipe recipe = new ShapelessRecipe("", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),
+        //?}
                 //? if >=1.21.2 {
                 /*List.of(Ingredient.of(Items.OAK_PLANKS))) {
                 *///?} else {
@@ -233,13 +239,24 @@ class CraftingRegressionTest {
         input.set(DataComponents.CUSTOM_NAME, Component.literal("inherited name"));
         player.getInventory().setItem(0, input);
         int[] assemblyCalls = {0};
+        //? if >=26.1 {
+        /*ShapelessRecipe dynamic = new ShapelessRecipe(new Recipe.CommonInfo(true),
+                new CraftingRecipe.CraftingBookInfo(CraftingBookCategory.MISC, ""),
+                net.minecraft.world.item.ItemStackTemplate.fromNonEmptyStack(new ItemStack(Items.DIAMOND)),
+        *///?} else {
         ShapelessRecipe dynamic = new ShapelessRecipe("", CraftingBookCategory.MISC, new ItemStack(Items.DIAMOND),
+        //?}
                 //? if >=1.21.2 {
                 /*List.of(Ingredient.of(Items.MILK_BUCKET))) {
                 *///?} else {
                 NonNullList.of(Ingredient.EMPTY, Ingredient.of(Items.MILK_BUCKET))) {
                 //?}
-            @Override public ItemStack assemble(CraftingInput input, HolderLookup.Provider registries) {
+            @Override
+            //? if >=26.1 {
+            /*public ItemStack assemble(CraftingInput input) {
+            *///?} else {
+            public ItemStack assemble(CraftingInput input, HolderLookup.Provider registries) {
+            //?}
                 assemblyCalls[0]++;
                 ItemStack result = new ItemStack(Items.EMERALD, 2);
                 result.set(DataComponents.CUSTOM_NAME, input.getItem(0).get(DataComponents.CUSTOM_NAME));
@@ -267,9 +284,16 @@ class CraftingRegressionTest {
         ServerPlayer player = inventoryOnlyPlayer(server);
         player.getInventory().setItem(0, new ItemStack(Items.OAK_PLANKS, 2));
         player.getInventory().setItem(1, new ItemStack(Items.STICK));
+        //? if >=26.1 {
+        /*ShapedRecipe shaped = new ShapedRecipe(new Recipe.CommonInfo(true),
+                new CraftingRecipe.CraftingBookInfo(CraftingBookCategory.MISC, ""),
+                ShapedRecipePattern.of(Map.of('P', Ingredient.of(Items.OAK_PLANKS), 'S', Ingredient.of(Items.STICK)), "P ", "PS"),
+                net.minecraft.world.item.ItemStackTemplate.fromNonEmptyStack(new ItemStack(Items.WOODEN_AXE)));
+        *///?} else {
         ShapedRecipe shaped = new ShapedRecipe("", CraftingBookCategory.MISC,
                 ShapedRecipePattern.of(Map.of('P', Ingredient.of(Items.OAK_PLANKS), 'S', Ingredient.of(Items.STICK)), "P ", "PS"),
                 new ItemStack(Items.WOODEN_AXE));
+        //?}
         Object plan = build(player, shaped);
         assertNotNull(plan);
         assertTrue(results(plan).getFirst().is(Items.WOODEN_AXE));
@@ -374,6 +398,22 @@ class CraftingRegressionTest {
         assertFalse(RecipeSupport.isConfiguredSimpleRecipeFor(null, smelting, server.registryAccess()));
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void persistedUnlocksSurviveSavingAndReading(MinecraftServer server) throws Exception {
+        ServerPlayer player = inventoryOnlyPlayer(server);
+        Class<?> unlocks = com.adore.convenientcrafting.recipe.unlock.RecipeUnlocks.class;
+        Method save = unlocks.getDeclaredMethod("saveUnlockedTypes", Player.class, Set.class);
+        Method load = unlocks.getDeclaredMethod("getUnlockedTypes", Player.class);
+        save.setAccessible(true);
+        load.setAccessible(true);
+        Set<String> expected = Set.of("minecraft:smithing", "minecraft:stonecutting");
+        save.invoke(null, player, expected);
+        assertEquals(expected, (Set<String>) load.invoke(null, player));
+        save.invoke(null, player, Set.of());
+        assertEquals(Set.of(), load.invoke(null, player));
+    }
+
     private static boolean exhaustive(List<Ingredient> ingredients, List<ItemStack> stacks, int next) {
         if (next == ingredients.size()) return true;
         for (ItemStack stack : stacks) {
@@ -400,7 +440,11 @@ class CraftingRegressionTest {
     }
 
     private static ShapelessRecipe recipe(ItemStack result, Ingredient... ingredients) {
-        //? if >=1.21.2 {
+        //? if >=26.1 {
+        /*return new ShapelessRecipe(new Recipe.CommonInfo(true),
+                new CraftingRecipe.CraftingBookInfo(CraftingBookCategory.MISC, ""),
+                net.minecraft.world.item.ItemStackTemplate.fromNonEmptyStack(result), List.of(ingredients));
+        *///?} elif >=1.21.2 {
         /*return new ShapelessRecipe("", CraftingBookCategory.MISC, result, List.of(ingredients));
         *///?} else {
         return new ShapelessRecipe("", CraftingBookCategory.MISC, result, NonNullList.of(Ingredient.EMPTY, ingredients));
@@ -441,7 +485,11 @@ class CraftingRegressionTest {
         put(unsafe, level, ServerLevel.class.getDeclaredField("server"), server);
         put(unsafe, player, Entity.class.getDeclaredField("level"), level);
         put(unsafe, player, ServerPlayer.class.getDeclaredField("server"), server);
-        put(unsafe, player, Player.class.getDeclaredField("inventory"), new Inventory(player) {
+        put(unsafe, player, Player.class.getDeclaredField("inventory"), new Inventory(player
+                //? if >=26.1 {
+                /*, new net.minecraft.world.entity.EntityEquipment()
+                *///?}
+        ) {
             @Override public void placeItemBackInInventory(ItemStack stack) {
                 // Exercise vanilla insertion without a network connection in this fixture.
                 super.placeItemBackInInventory(stack, false);

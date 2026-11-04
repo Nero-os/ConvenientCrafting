@@ -1,6 +1,7 @@
 package com.adore.convenientcrafting.inventory;
 
 import com.adore.convenientcrafting.compat.RecipeCompat;
+import com.adore.convenientcrafting.compat.ItemCompat;
 import com.adore.convenientcrafting.item.CategorizedBagItem;
 import com.adore.convenientcrafting.registry.ModItems;
 
@@ -10,8 +11,10 @@ import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Item;
+//? if <26.1 {
 import net.minecraft.world.item.PickaxeItem;
 import net.minecraft.world.item.SwordItem;
+//?}
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
@@ -87,7 +90,7 @@ public class InventorySorter {
 
         // Pack copied bags before materializing root slots; unpacking can exceed 36 slots.
         packBucketsIntoBags(itemCounts);
-        Inventory planned = new Inventory(inventory.player);
+        Inventory planned = ItemCompat.emptyInventory(inventory.player);
         if (!distributeBuckets(planned, itemCounts, true, PLAYER_INVENTORY_SIZE)) {
             sortInventory(inventory);
             return;
@@ -172,7 +175,12 @@ public class InventorySorter {
      * @return 如果是镐或剑则返回 {@code true}
      */
     private static boolean isFrequentTool(Item item) {
+        //? if >=26.1 {
+        /*return item.builtInRegistryHolder().is(net.minecraft.tags.ItemTags.PICKAXES)
+                || item.builtInRegistryHolder().is(net.minecraft.tags.ItemTags.SWORDS);
+        *///?} else {
         return item instanceof PickaxeItem || item instanceof SwordItem;
+        //?}
     }
 
     /**

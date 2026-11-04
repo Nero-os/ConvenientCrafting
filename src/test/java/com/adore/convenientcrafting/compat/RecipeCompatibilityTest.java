@@ -84,7 +84,7 @@ class RecipeCompatibilityTest {
         assertTrue(RecipeCompat.isBaseIngredient(smithing, new ItemStack(Items.DIAMOND_SWORD)));
         assertTrue(RecipeCompat.isAdditionIngredient(smithing, new ItemStack(Items.NETHERITE_INGOT)));
         assertFalse(RecipeCompat.isAdditionIngredient(smithing, new ItemStack(Items.DIAMOND)));
-        ItemStack sword = smithing.assemble(new net.minecraft.world.item.crafting.SmithingRecipeInput(
+        ItemStack sword = RecipeCompat.assemble(smithing, new net.minecraft.world.item.crafting.SmithingRecipeInput(
                 new ItemStack(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE),
                 new ItemStack(Items.DIAMOND_SWORD), new ItemStack(Items.NETHERITE_INGOT)), server.registryAccess());
         assertTrue(sword.is(Items.NETHERITE_SWORD));

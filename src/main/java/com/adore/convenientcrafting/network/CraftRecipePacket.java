@@ -726,7 +726,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
         if (recipe instanceof CraftingRecipe crafting) {
             CraftingInput input = RecipeCompat.craftingInput(crafting, matched);
             if (!crafting.matches(input, player.level())) return false;
-            result = crafting.assemble(input, player.registryAccess());
+            result = RecipeCompat.assemble(crafting, input, player.registryAccess());
             if (result.isEmpty()) return false;
             for (ItemStack remainder : crafting.getRemainingItems(input)) pool.add(remainder);
         }
@@ -1065,7 +1065,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             CraftingInput input = RecipeCompat.craftingInput(craftingRecipe,
                     matchedIngredients.stream().map(IngredientUse::stack).toList());
             if (!craftingRecipe.matches(input, player.level())) return null;
-            ItemStack result = craftingRecipe.assemble(input, server.registryAccess());
+            ItemStack result = RecipeCompat.assemble(craftingRecipe, input, server.registryAccess());
             if (result.isEmpty()) return null;
             List<ItemStack> results = new ArrayList<>();
             results.add(result.copy());
@@ -1082,7 +1082,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             SmithingRecipeInput input = new SmithingRecipeInput(match.template().stack(), match.base().stack(), match.addition().stack());
             if (!smithingRecipe.matches(input, player.level())) return null;
 
-            ItemStack result = smithingRecipe.assemble(input, server.registryAccess());
+            ItemStack result = RecipeCompat.assemble(smithingRecipe, input, server.registryAccess());
             if (result.isEmpty()) return null;
 
             return CraftingResult.single(result, List.of(
@@ -1099,7 +1099,7 @@ public record CraftRecipePacket(ResourceLocation recipeId, int craftCount, boole
             SingleRecipeInput input = new SingleRecipeInput(matchedIngredients.getFirst().stack());
             if (!stonecutterRecipe.matches(input, player.level())) return null;
 
-            ItemStack result = stonecutterRecipe.assemble(input, server.registryAccess());
+            ItemStack result = RecipeCompat.assemble(stonecutterRecipe, input, server.registryAccess());
             return result.isEmpty() ? null : CraftingResult.single(result, matchedIngredients);
         }
 

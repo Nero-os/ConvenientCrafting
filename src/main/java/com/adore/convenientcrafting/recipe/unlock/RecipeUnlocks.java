@@ -313,7 +313,11 @@ public final class RecipeUnlocks {
                         .withStyle(ChatFormatting.YELLOW))
                 .append(Component.literal(" 后，可在便捷合成面板中使用对应配方。")
                         .withStyle(ChatFormatting.GRAY));
+        //? if >=26.1 {
+        /*if (player instanceof ServerPlayer serverPlayer) serverPlayer.sendSystemMessage(message, false);
+        *///?} else {
         player.displayClientMessage(message, false);
+        //?}
     }
 
     private static String getRecipeTypeDisplayName(ResourceLocation recipeTypeId) {
@@ -378,16 +382,32 @@ public final class RecipeUnlocks {
 
     private static Set<String> getUnlockedTypes(Player player) {
         Set<String> unlockedTypes = new HashSet<>();
+        //? if >=26.1 {
+        /*CompoundTag data = player.getPersistentData().getCompoundOrEmpty(DATA_KEY);
+        *///?} else {
         CompoundTag data = player.getPersistentData().getCompound(DATA_KEY);
+        //?}
+        //? if >=26.1 {
+        /*ListTag list = data.getListOrEmpty(UNLOCKED_TYPES_KEY);
+        *///?} else {
         ListTag list = data.getList(UNLOCKED_TYPES_KEY, Tag.TAG_STRING);
+        //?}
         for (int i = 0; i < list.size(); i++) {
+            //? if >=26.1 {
+            /*list.getString(i).ifPresent(unlockedTypes::add);
+            *///?} else {
             unlockedTypes.add(list.getString(i));
+            //?}
         }
         return unlockedTypes;
     }
 
     private static void saveUnlockedTypes(Player player, Set<String> unlockedTypes) {
+        //? if >=26.1 {
+        /*CompoundTag data = player.getPersistentData().getCompoundOrEmpty(DATA_KEY);
+        *///?} else {
         CompoundTag data = player.getPersistentData().getCompound(DATA_KEY);
+        //?}
         ListTag list = new ListTag();
         unlockedTypes.stream().sorted().map(StringTag::valueOf).forEach(list::add);
         data.put(UNLOCKED_TYPES_KEY, list);
